@@ -1,0 +1,164 @@
+---
+title: "DB Method"
+author: "Kinh Nguyen"
+date: "`r Sys.Date()`"
+---
+
+Aims
+
+- Fit the model using different distributions for the age at first sex
+    + Log-normal
+    + Gamma
+    + Logistic
+    + Skew-loggistic
+- Compute repeated 5-fold validation
+
+
+# Read data -  doing Guinea first
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+library(data.table)
+library(ktools)
+library(tidyverse)
+data = fread("data/SSA_AFS.csv.bz2")
+
+library(flexsurv)
+dists <- c("gamma",  "lognormal", "llogis", "gengamma")
+dists_long <- c("Gamma", "Lognormal", "Log-logistic","Generalized gamma")
+```
+
+# Non-parametric hazard - Uganda male
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+library("muhaz")
+fitdt = data %>% filter(sex==1 & ISO_A3 == name2iso("Uganda"))
+kernel_haz_est <- muhaz(fitdt$afs, fitdt$event)
+kernel_haz <- data.table(time = kernel_haz_est$est.grid,
+                         est = kernel_haz_est$haz.est,
+                         method = "Kernel density")
+
+kernel_haz_est$haz.est %>% cumsum %>% plot
+
+parametric_haz <- vector(mode = "list", length = length(dists))
+for (i in 1:length(dists)){
+  fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt, dist = dists[i]) 
+  parametric_haz[[i]] <- summary(fit, type = "hazard", ci = FALSE, tidy = TRUE)
+  parametric_haz[[i]]$method <- dists_long[i]
+}
+parametric_haz <- rbindlist(parametric_haz)
+
+haz <- rbind(kernel_haz, parametric_haz)
+haz[, method := factor(method, levels = c("Kernel density", dists_long))]
+n_dists <- length(dists) 
+
+g1 = ggplot(haz, aes(x = time, y = est, col = method, linetype = method)) +
+  geom_line(width=1.1) +
+  coord_cartesian(xlim=c(0, 40)) +
+  xlab("Age") + ylab("Hazard") + 
+  scale_linetype_manual(name = "", values = c(1, 1+1:n_dists)) +
+  scale_color_manual(name = "", values = c(1, 1+1:n_dists))
+```
+
+# Non-parametric hazard - Guinea male
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+fitdt = data %>% filter(sex==1 & ISO_A3 == name2iso("Guinea"))
+kernel_haz_est <- muhaz(fitdt$afs, fitdt$event)
+kernel_haz <- data.table(time = kernel_haz_est$est.grid,
+                         est = kernel_haz_est$haz.est,
+                         method = "Kernel density")
+
+parametric_haz <- vector(mode = "list", length = length(dists))
+for (i in 1:length(dists)){
+  fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt, dist = dists[i]) 
+  parametric_haz[[i]] <- summary(fit, type = "hazard", ci = FALSE, tidy = TRUE)
+  parametric_haz[[i]]$method <- dists_long[i]
+}
+parametric_haz <- rbindlist(parametric_haz)
+
+haz <- rbind(kernel_haz, parametric_haz)
+haz[, method := factor(method, levels = c("Kernel density", dists_long))]
+n_dists <- length(dists) 
+
+g2 = ggplot(haz, aes(x = time, y = est, col = method, linetype = method)) +
+  geom_line(width=1.1) +
+  coord_cartesian(xlim=c(0, 40)) +
+  xlab("Age") + ylab("Hazard") + 
+  scale_linetype_manual(name = "", values = c(1, 1+1:n_dists)) +
+  scale_color_manual(name = "", values = c(1, 1+1:n_dists))
+```
+
+# Non-parametric hazard - Rwanda female
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+fitdt = data %>% filter(sex==2 & ISO_A3 == name2iso("Rwanda"))
+kernel_haz_est <- muhaz(fitdt$afs, fitdt$event)
+kernel_haz <- data.table(time = kernel_haz_est$est.grid,
+                         est = kernel_haz_est$haz.est,
+                         method = "Kernel density")
+
+parametric_haz <- vector(mode = "list", length = length(dists))
+for (i in 1:length(dists)){
+  fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt, dist = dists[i]) 
+  parametric_haz[[i]] <- summary(fit, type = "hazard", ci = FALSE, tidy = TRUE)
+  parametric_haz[[i]]$method <- dists_long[i]
+}
+parametric_haz <- rbindlist(parametric_haz)
+
+haz <- rbind(kernel_haz, parametric_haz)
+haz[, method := factor(method, levels = c("Kernel density", dists_long))]
+n_dists <- length(dists) 
+
+g3 = ggplot(haz, aes(x = time, y = est, col = method, linetype = method)) +
+  geom_line(width=1.1) +
+  coord_cartesian(xlim=c(0, 40)) +
+  xlab("Age") + ylab("Hazard") + 
+  scale_linetype_manual(name = "", values = c(1, 1+1:n_dists)) +
+  scale_color_manual(name = "", values = c(1, 1+1:n_dists))
+```
+
+# Non-parametric hazard - Mozambique female
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+fitdt = data %>% filter(sex==2 & ISO_A3 == name2iso("Mozambique"))
+kernel_haz_est <- muhaz(fitdt$afs, fitdt$event)
+kernel_haz <- data.table(time = kernel_haz_est$est.grid,
+                         est = kernel_haz_est$haz.est,
+                         method = "Kernel density")
+
+parametric_haz <- vector(mode = "list", length = length(dists))
+for (i in 1:length(dists)){
+  fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt, dist = dists[i]) 
+  parametric_haz[[i]] <- summary(fit, type = "hazard", ci = FALSE, tidy = TRUE)
+  parametric_haz[[i]]$method <- dists_long[i]
+}
+parametric_haz <- rbindlist(parametric_haz)
+
+haz <- rbind(kernel_haz, parametric_haz)
+haz[, method := factor(method, level = c("Kernel density", dists_long))]
+n_dists <- length(dists) 
+
+g4 = ggplot(haz, aes(x = time, y = est, col = method, linetype = method)) +
+  geom_line(width=1.1) +
+  coord_cartesian(xlim=c(0, 40)) +
+  xlab("Age") + ylab("Hazard") + 
+  scale_linetype_manual(name = "", values = c(1, 1+1:n_dists)) +
+  scale_color_manual(name = "", values = c(1, 1+1:n_dists))
+
+```
+
+```{r}
+library(ggpubr)
+ggarrange(g1, g2, g3, g4, nrow=2, ncol=2, common.legend = TRUE,
+				label = char(Uganda, Guinea, Rwanda, Mozambique), 
+				font.label = list(size = 11, color = "dimgray", face = "plain")) 
+savePDF("F_hazard_fn")
+```
+
+```{r}
+
+skewll = list(name = "skewll", pars = char(shape, scale, skew), location="scale", transforms = c(identity, log, log))
+
+fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt, dist = skewll)
+```
+

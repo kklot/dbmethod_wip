@@ -1,0 +1,218 @@
+```{r}
+library(tidyverse)
+library(ggrepel)
+library(ggpubr)
+library(cowplot)
+library(ktools)
+library(ggrepel)
+library(hrbrthemes)
+library("inlmisc")
+options(ggplot2.discrete.fill=unname(inlmisc::GetColors(9, scheme = "muted")), 
+        ggplot2.discrete.colour=unname(inlmisc::GetColors(9, scheme = "muted")))
+library(survey)
+library(rdhs)
+
+options(ggplot2.discrete.colour = hcl.colors(8))
+set.seed(111)
+
+
+theme = theme(strip.background = element_rect(fill='grey95', color = 'grey70', size = .3), 
+							panel.border = element_rect(color = 'grey70')) 
+              asds
+```
+
+# Show biases asumptions
+
+```{r}
+# Biases forms
+bias_lgt = function(age, mid=23, maxx=4.5, r=.4) 
+{
+	maxx / (1 + exp(-r * (age - mid))) - 2
+}
+
+# "Women" type bias
+bias1 = tibble(age = 15:55) %>% 
+	mutate(bias =  .5 - bias_lgt(age,,2.5) + rnorm(n(), 0, .3)) %>% 
+	ggplot() + geom_line(aes(age, bias)) + labs(x='Age at interview', y='Bias') +
+	theme(legend.position='none', panel.grid = element_blank()) 
+
+# "Men" type bias
+bias2 = tibble(age = 15:55) %>% 
+	mutate(bias =  .5 + bias_lgt(age, r = .25) + rnorm(n(), 0, .3)) %>% 
+	ggplot() + geom_line(aes(age, bias)) + labs(x='Age at interview', y='Bias') +
+	theme(legend.position='none', panel.grid = element_blank())
+yoblab = seq(1970, 1999, 5) %>% paste(.+4, sep="-") %>% magrittr::extract(1:5)
+
+# Resulting survey data
+biases = 
+	tibble(yob = 1970:2020, afs = 17) %>% 
+	uncount(4, .id = 'sv') %>% mutate(sv = 2000 + (sv-1)*5) %>% 
+	mutate(aar = sv - yob) %>% 
+	mutate(include = aar >=15) %>% filter(include) %>% 
+	mutate(bias_women = .5-bias_lgt(aar,,2.5) + rnorm(n(), 0, .3)) %>% 
+	mutate(bias_men =  .5+bias_lgt(aar, r=.25) + rnorm(n(), 0, .3)) %>% 
+	mutate(yobgr = findInterval(yob, seq(1970, 1999, 5))) %>% 
+	pivot_longer(bias_women:bias_men, names_prefix='bias_', names_to='type', values_to='bias') %>% 
+	group_by(sv, yobgr, type) %>% 
+	summarise(afs = median(afs + bias)) %>% 
+	filter(yobgr != 6) %>%
+	group_by(type, yobgr) %>% 
+	mutate(note = if_else(sv == min(sv), yoblab[yobgr], NA_character_)) %>% 
+	mutate(type = if_else(type == 'men', 'I', 'II')) %>% 
+	ggplot() +
+		geom_hline(yintercept=17, color = 'dimgrey', linetype = 'dashed') +
+		geom_line(aes(sv, afs, color = factor(yobgr, labels = yoblab), linetype = factor(yobgr)), size=.7) +
+		geom_point(aes(sv, afs, color = factor(yobgr, labels = yoblab), linetype = factor(yobgr)) ) +
+		geom_label_repel(aes(sv, afs, color = factor(yobgr, labels = yoblab), label = note), size=2) +
+		facet_wrap('type')+theme_bw()+
+		theme(legend.position='none', panel.grid = element_blank())+ 
+		labs(x='Survey year', y = 'Median AFS') +
+		coord_cartesian(ylim=c(13, 20)) +
+
+g = ggdraw(biases) +
+	draw_plot(bias2 + theme_classic(), .21, .07, .3, .2, hjust=-.01, vjust=-.1) +
+	draw_plot(bias1 + theme_classic(), .61, .07, .3, .2, hjust=-.25, vjust=-.1)
+quartz_off(g, 'Bias_type' , 7, 5)
+
+
+```
+
+# show cases of within-cohort inconsistency
+
+## Pull with `rdhs`
+
+```{r}
+# SSA = fread('data/SSA_AFS.csv.bz2') %>% filter(ver == "DHS"
+rdhs::set_rdhs_config(email = "ath19@ic.ac.uk", 
+                      project = "Statistics and Machine Learning for HIV")
+
+debugonce(dhs_datasets)
+
+datasets <- dhs_datasets(char(SN, ET, GN, ZM), 
+                         fileFormat = "flat", 
+                         fileType = c("MR", "IR"))
+
+datasets %<>% 
+  filter(SurveyYear >= 1996) %>% 
+  mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
+
+downloads <- get_datasets(datasets$FileName)
+names(downloads)
+
+# it seems that this fixes it
+# 
+# add a check for "not authorized for this country." error in
+# response = httr::GET() from get_datasets
+# httr::content(response, "text")
+# 
+# rdhs:::.rdhs$client$get_datasets(dataset_filenames = "SNMR31FL.ZIP")
+# rdhs:::.rdhs$client$available_datasets()
+```
+## Extract AFS
+
+```{r}
+search_variable_labels(datasets$FileName, "age at first sex")
+
+get_afs <- function(x) {
+  o <- readRDS(downloads[[x]]) %>% 
+    as_tibble %>% 
+    mutate(lab = datasets$SurveyId[x])
+  if (datasets$sex[x]=="male") {
+    if (exists("mv531", where = o))
+      o <- o %>% 
+        dplyr::select(psu = mv021, strata = mv023, weights = mv005,
+               dob = mv011, doi = mv008, afs = mv531, lab)
+    else if (exists("mv525", where = o))
+      o <- o %>% 
+        dplyr::select(psu = mv021, strata = mv023, weights = mv005,
+               dob = mv011, doi = mv008, afs = mv525, lab)
+    else
+      return(NULL)
+  } else {
+    if (exists("v531", where = o))
+      o <- o %>% 
+        dplyr::select(psu = v021, strata = v023, weights = v005,
+               dob = v011, doi = v008, afs = v531, lab)
+    else if (exists("v525", where = o))
+      o <- o %>% 
+        dplyr::select(psu = v021, strata = v023, weights = v005,
+               dob = v011, doi = v008, afs = v525, lab)
+    else
+      return(NULL)
+  }
+  o %>%
+    mutate(iso = substr(lab, 1, 2),
+           dob = if_else(iso == "ET", dob + 92L, dob),
+           doi = if_else(iso == "ET", doi + 92L, doi),
+           yob = cmc_to_year(dob), svy = cmc_to_year(doi), 
+           age = svy - yob, sex = datasets$sex[x]) %>% 
+    drop_na() 
+}
+
+dta <- lapply(seq_along(downloads), get_afs)
+
+labs = paste( seq(1970, 1999, 5), seq(1970, 1999, 5) + 4, sep = "-" )
+
+dtab <- bind_rows(dta) %>% 
+  filter(yob >= 1970 & yob < 2000) %>%
+  mutate(yobgrp = findInterval(yob, seq(1970, 2000, 5)),
+         yobgrp = factor(yobgrp, labels = labs)) %>%
+  filter(afs <= 55 & age >= 18 & yob < 1990) %>% 
+  mutate(event = afs != 0, ever18 = as.integer(event & afs < 18))
+dtab
+```
+
+## Survey designs and stats
+
+```{r}
+design <- svydesign(id=dtab$psu, 
+                    strata=dtab$strata, 
+                    weights=dtab$weights, data=dtab, nest = TRUE)
+
+afsby <- svyby(formula = ~ever18, 
+               by = ~lab + yobgrp + sex, 
+               design = design, 
+               FUN = svyciprop, 
+               vartype = "ci")
+	
+afsby %>% 
+  mutate(svy = substr(lab, 3, 6), iso = substr(lab, 1, 2)) %>% 
+  filter(!(iso == "ET" & sex == "male")) %>% 
+  filter(!(iso == "GN" & sex == "female")) %>% 
+  filter(!(iso == "SN" & sex == "male")) %>% 
+  filter(!(iso == "ZM" & sex == "female")) %>% 
+  # restrict the number of consecutive surveys in Senegal
+  filter(!(iso == "SN" & svy %in% c(2014:2018))) %>% 
+  filter(!(iso == "ZM" & svy %in% c(1996))) %>% 
+  mutate(sex = tools::toTitleCase(sex), ISO_A3 = iso2name(iso), 
+         lab = paste0("DHS", svy),
+         grp = interaction(sex, ISO_A3, sep=" - "),
+         grp = factor(grp, levels = c("Male - Guinea", 
+		                                  "Male - Zambia", 
+		                                  "Female - Ethiopia", 
+		                                  "Female - Senegal"))) %>%
+  ggplot() +
+		geom_col(
+		  aes(yobgrp, ever18), 
+		  fill='#FCF4DC', color = '#A57706', size=.3, 
+		  position = position_dodge2(, "single")) +
+    geom_linerange(
+      aes(yobgrp, ever18, ymin = ci_l, ymax = ci_u),
+      position = position_dodge2(.9, "single"), size = 1.2, color = "#A57706") +
+		geom_text(aes(yobgrp, 0.15, label = lab), color = '#0A2933', size = 2, 
+		          angle = 90, position = position_dodge2(.9,"single")) +
+		facet_grid(rows = vars(grp), space="free", scales="free") +
+		labs(x = "Birth cohort", y = "", fill = "Survey year", 
+				 title = "Percentage ever had sex under 18 by survey years", 
+				 subtitle = "among 18+ year-old respondents",
+				 linetype = 'Birth cohort', color = 'Birth cohort') +
+		coord_cartesian(expand = .1) +
+		scale_y_continuous(labels=scales::percent) + 
+		theme_bw() +
+        theme(legend.position = "none", 
+              strip.background = element_rect(fill='grey95', color = 'grey70', size = .3), 
+              panel.border = element_rect(color = 'grey70'),
+              axis.text.x = element_text(angle = 0, size = 9)) -> g
+g
+quartz_off(g, 'data_discrepancy', 7, 7, open=1)
+```

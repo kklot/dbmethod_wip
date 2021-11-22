@@ -1,0 +1,269 @@
+---
+title: "DB Method"
+author: "Kinh Nguyen"
+date: "`r Sys.Date()`"
+---
+
+Aims
+
+- Fit the model using different distributions for the age at first sex and compare the hazard functional forms
+
+# Read data -  doing Guinea first
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+library(data.table)
+library(tidyverse)
+data = fread("data/SSA_AFS.csv.bz2")
+```
+
+# skew logistic
+
+```{r}
+library(gamlss.dist)
+roxygen2::roxygenize("~/Code/R/ktools/")
+
+# customd = list(name = "skewlogis", pars = char("scale", "shape", "skew"), 
+# 							 location = "scale", transforms = c(identity, exp, exp),
+# 							 inv.transforms = c(identity, log, log),
+# 							 inits = function() (c(1/18,10,1)))
+
+customd = list(name = "skewlogis", pars = char("scale", "shape", "skew"), 
+							 location = "scale", transforms = c(identity, log, log),
+							 inv.transforms = c(identity, exp, exp),
+							 inits = function() (c(1/18,10,1)))
+
+# customd = list(name = "SHASHo", pars = char(mu, sigma, nu, tau), 
+# 							 location = "mu", transforms = c(identity, log, identity, log),
+# 							 inv.transforms = c(identity, exp, identity, exp),
+# 							 inits = function() (c(15, .1, 0, .1)))
+#
+# summary(fit, type = "hazard") %>% as.data.table %>% 
+# 	ggplot() + geom_line(aes(time, est)) + 
+# 	geom_ribbon(aes(time, est, ymax = ucl, ymin = lcl), alpha=.5)
+```
+
+# Distribution to test
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+library(flexsurv)
+dists <- c("gamma",  "lognormal", "llogis", "gengamma", "customd")
+dists_long <- c("Gamma", "Lognormal", "Log-logistic","Generalized gamma", "Log-skew-logistic")
+```
+
+# Non-parametric hazard - Uganda male
+
+```{r include=FALSE, echo=FALSE, warnings=FALSE, message=FALSE}
+library("muhaz")
+options(ggplot2.discrete.colour = zurich, ggplot2.discrete.fill = unname(nord))
+
+getx = function(fitdt, pe = FALSE) {
+  met = "Kernel density"
+  kernel_est <- muhaz(fitdt$afs, fitdt$event)
+  kernel_haz <- data.table(time = kernel_est$est.grid, 
+                           est = kernel_est$haz.est, method = met) 
+  km_fit <- survfit(Surv(afs, event) ~ 1, data=fitdt)
+  kernel_sur <- summary(km_fit) %$% 
+    data.table(time, est=surv, lcl=lower, ucl=upper, method = "K-M")
+  parametric_haz <- vector(mode = "list", length = length(dists))
+  parametric_surv <- vector(mode = "list", length = length(dists))
+  for (i in 1:length(dists)){
+    if (dists[i] == "customd")
+      tofit = get(dists[i])
+    else
+      tofit = dists[i]
+    fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt, dist = tofit)
+    parametric_haz[[i]] <- summary(fit, type = "hazard", tidy = TRUE)
+    parametric_surv[[i]] <- summary(fit, type = "survival", tidy = TRUE)
+    parametric_haz[[i]]$method <- parametric_surv[[i]]$method <- dists_long[i]
+  }
+
+  parametric_haz <- rbindlist(parametric_haz)
+  parametric_surv <- rbindlist(parametric_surv)
+
+  haz <- rbind(kernel_haz, parametric_haz, fill = TRUE)
+  haz[, method := factor(method, levels = c(met, dists_long))]
+  haz[, type := "hazard"]
+
+  sur <- rbind(kernel_sur, parametric_surv, fill = TRUE)
+  sur[, method := factor(method, levels = c('K-M', dists_long))]
+  sur[, type := "survival"]
+
+  bind_rows(haz, sur)
+}
+
+fitdt = data %>% filter(sex==2 & ISO_A3 == name2iso("Ethiopia")) 
+g1 = getx(fitdt, FALSE)  %>%  mutate(name="Ethiopia", sex="Female")
+
+fitdt = data %>% filter(sex==2 & ISO_A3 == name2iso("Senegal"))
+g2 = getx(fitdt, FALSE)  %>% mutate(name="Senegal", sex="Female")
+
+fitdt = data %>% filter(sex==1 & ISO_A3 == name2iso("Guinea"))
+g3 = getx(fitdt, FALSE)  %>% mutate(name="Guinea", sex="Male")
+
+fitdt = data %>% filter(sex==1 & ISO_A3 == name2iso("Zambia"))
+g4 = getx(fitdt, FALSE)  %>% mutate(name="Zambia", sex="Male")
+```
+# plot hazard
+```{r}
+library(ggpubr)
+cls = hcl.colors(7)
+
+theme = theme_bw() + 
+	theme(legend.position="bottom", 
+	      strip.background=element_rect(fill='grey90', color='grey70'), 
+				panel.border = element_rect(color = 'grey70'))
+
+
+distn <- replace(dists_long, list = c(2, 4), 
+                 values = c("Log-normal", "Generalized Gamma"))
+
+
+cls = six_col[c(1,1:6)]
+
+bind_rows(g1, g2, g3, g4)  %>% 
+  filter(time >= 10 & time <= 30) %>% 
+  mutate(grp = paste(name, "-",sex, bracket(type)),
+         grp = factor(grp, levels = refactor(grp, c(5:6, 7:8, 1:2, 3:4))),
+         method = fct_recode(method, 
+                             "Kaplan-Meier" = "K-M",
+                             "Kernel Density" = "Kernel density",
+                             "Generalized Gamma" = "Generalized gamma",
+                             "Log-normal" = "Lognormal"), 
+         method = factor(method, 
+                         levels = c("Kernel Density", "Kaplan-Meier", distn))
+         ) %>% 
+	ggplot() +
+		geom_ribbon(aes(time, est, ymin = lcl, ymax = ucl, fill = method), alpha=.5) +
+		geom_line(aes(x = time, y = est, color = method, linetype=method), size = .7) +
+		coord_cartesian(xlim=c(10, 30), expand=F) +
+		xlab("Age") + ylab("")  +
+    labs(color="", linetype="", fill="") +
+		scale_fill_manual(values=cls) +
+    scale_linetype_manual(values=c("dashed", "dotted", rep('solid',5))) +
+		scale_color_manual(values=cls) +
+		facet_wrap(vars(grp), scales="free", nrow=4, ncol=2) +
+		theme -> g
+g
+quartz_off(g, 'F_hazard_fn', 6, 8, open=1) #
+```
+
+# 10 folds
+
+```{r}
+ll_llogis <- function(age, event, shape, scale) {
+	if (event == 1)
+		o = dllogis(age, shape, scale) 
+	else
+		o = 1 - pllogis(age, shape, scale) 
+  log(o)
+}
+ll_llogis %<>% Vectorize
+
+ll_sllogis <- function(age, event, scale, shape, skew) {
+	if (event == 1)
+		o = dskewlogis(age, scale, shape, skew) 
+	else
+		o = 1 - pskewlogis(age, scale, shape, skew) 
+  log(o)
+}
+ll_sllogis %<>% Vectorize
+
+ELPD <- function(fitdt, K=10, S=1000) {
+	ll <- NULL
+	for (i in 1:K) {
+		cat(i)
+		fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt %>% filter(grp!=i), dist = "llogis")
+		smp <- mvtnorm::rmvnorm(S, fit$res.t[, 1], fit$cov) %>% exp
+		o <- apply(smp, 1, function(x) { fitdt %>% filter(grp==i) %$% ll_llogis(afs, event, x[1], x[2]) })
+		ll <- rbind(ll, o)
+	}
+
+	lls <- NULL
+	for (i in 1:K) {
+		cat(i)
+		fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt %>% filter(grp!=i), dist = customd)
+		smp <- mvtnorm::rmvnorm(S, fit$res.t[, 1], fit$cov)
+		smp[,2:3] %<>% exp
+		o <- apply(smp, 1, function(x) { fitdt %>% filter(grp==i) %$% ll_sllogis(afs, event, x[1], x[2], x[3]) })
+		lls <- rbind(lls, o)
+	}
+
+	# ll %>% exp %>% rowMeans  %>% log %>% sum
+	list(llogis = loo::elpd(t(ll)), skewlg = loo::elpd(t(lls)))
+
+}
+```
+
+```{r, warning = FALSE, message = FALSE}
+# Generate 10 groups
+
+set.seed(2021)
+K = 10; S = 1000
+
+fitdt = data %>% filter(sex==1 & ISO_A3 == name2iso("Uganda") & ver == "DHS")  %>%
+	mutate(grp = sample(1:K, n(), TRUE))
+ug1 = ELPD(fitdt, K, S)
+
+fitdt = data %>% filter(sex==1 & ISO_A3 == name2iso("Guinea") & ver == "DHS") %>% 
+	mutate(grp = sample(1:K, n(), TRUE))
+gn1 = ELPD(fitdt, K, S)
+fitdt = data %>% filter(sex==2 & ISO_A3 == name2iso("Rwanda") & ver == "DHS") %>% 
+	mutate(grp = sample(1:K, n(), TRUE))
+rw2 = ELPD(fitdt, K, S)
+fitdt = data %>% filter(sex==2 & ISO_A3 == name2iso("Mozambique") & ver == "DHS") %>% 
+	mutate(grp = sample(1:K, n(), TRUE))
+mz2 = ELPD(fitdt, K, S)
+
+save.image("save_after_knit.RData")
+```
+
+```{r, result = "asis"}
+load("save_after_knit.RData")
+
+print(loo::loo_compare(ug1[[1]], ug1[[2]]), simplify = FALSE, digits=3)
+print(loo::loo_compare(gn1[[1]], gn1[[2]]), simplify = FALSE, digits=3)
+print(loo::loo_compare(rw2[[1]], rw2[[2]]), simplify = FALSE, digits=3)
+print(loo::loo_compare(mz2[[1]], mz2[[2]]), simplify = FALSE, digits=3)
+```
+
+# adding covariates
+
+
+```{r}
+ll_sllogis <- function(age, event, scale, shape, skew) {
+	if (event == 1)
+		o = dskewlogis(age, scale, shape, skew) 
+	else
+		o = 1 - pskewlogis(age, scale, shape, skew) 
+  log(o)
+}
+ll_sllogis %<>% Vectorize
+
+fitdt = 
+	data %>% filter(sex==1 & ISO_A3 == name2iso("Uganda") & ver == "DHS")  %>%
+	mutate(grp = sample(1:K, n(), TRUE)) %>% 
+	mutate(age = scale(age), yob = scale(yob))
+
+library(mgcv)
+
+fit <- flexsurvreg(Surv(afs, event) ~ 1 + age + yob, data = fitdt %>% filter(grp!=i), dist = customd)
+smp <- mvtnorm::rmvnorm(S, fit$res.t[, 1], fit$cov)
+smp[,2:3] %<>% exp
+o   <- apply(smp, 1, function(x) { fitdt %>% filter(grp==i) %$% ll_sllogis(afs, event, x[1] + x[4] * age, x[2], x[3]) })
+
+ELPD <- function(fitdt, K=10, S=1000) {
+	ll <- NULL
+	for (i in 1:K) {
+		cat(i)
+		fit <- flexsurvreg(Surv(afs, event) ~ 1, data = fitdt %>% filter(grp!=i), dist = customd)
+		smp <- mvtnorm::rmvnorm(S, fit$res.t[, 1], fit$cov)
+		smp[,2:3] %<>% exp
+		o <- apply(smp, 1, function(x) { fitdt %>% filter(grp==i) %$% ll_sllogis(afs, event, x[1], x[2], x[3]) })
+		lls <- rbind(lls, o)
+	}
+	# ll %>% exp %>% rowMeans  %>% log %>% sum
+	list(llogis = loo::elpd(t(ll)), skewlg = loo::elpd(t(lls)))
+
+}
+```
+

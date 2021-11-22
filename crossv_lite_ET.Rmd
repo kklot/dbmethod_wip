@@ -1,0 +1,420 @@
+---
+title: "DB Method"
+author: "Kinh Nguyen"
+date: "`r Sys.Date()`"
+params:
+  country: "Senegal"
+  sex: 2
+---
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+library(ktools)
+library(TMB)
+library(dplyr)
+library(loo)
+library(data.table)
+library(knitr)
+
+set.seed(123)
+```
+
+```{r}
+# sexual debut data
+# ssa = data.table::fread("data/SSA_AFS.csv.bz2")
+
+# TMB model
+compile('model.cpp')
+dyn.load(dynlib('model'))
+openmp(4)
+invisible(config(tape.parallel=FALSE, DLL='model'))
+
+# sample posterior
+source("tmb_sampling.R")
+
+source("get_predict.R")
+```
+
+# `r params$country` data of sex `r params$sex`
+
+```{r}
+sexes <- c('male', 'female')
+params <- list(sex=1, country="Guinea")
+
+di <- filter(dtab, iso == "ET" & sex == "female")
+```
+
+# Survey design
+
+```{r}
+design <- svydesign(
+  id      = di$psu, 
+  strata  = di$strata, 
+  weights = di$weights,
+  data    = di, 
+  nest    = TRUE
+)
+
+afsby <- svyby(
+  formula = ~ever18, 
+  by      = ~lab + yob, 
+  design  = design, 
+  FUN     = svyciprop, 
+  vartype = "ci"
+)
+```
+
+# prepare fit data
+
+```{r}
+fitdt = di %>% 
+  mutate(afs = as.numeric(afs), 
+         event = as.integer(event),
+         afs = if_else(event==0, age, afs))
+  
+yob_u <- fitdt %>% pull(yob) %>% unique() %>% sort()
+age_u <- fitdt %>% pull(age) %>% unique() %>% sort()
+```
+
+# Fitting
+
+```{r}
+# Kish-weighted
+select <- dplyr::select
+# m1
+uga1k = get_predict(to_skew = 0, weightv = "kish", data = fitdt)
+uga2k = get_predict(to_skew = 0, weightv = "kish", yob_term = 1, data = fitdt)
+uga3k = get_predict(to_skew = 0, weightv = "kish", yob_term = 1, smooth_yob = 1, data = fitdt)
+uga4k = get_predict(to_skew = 0, weightv = "kish", yob_term = 1, smooth_yob = 1, age_term = 1, data = fitdt)
+uga5k = get_predict(to_skew = 0, weightv = "kish", yob_term = 1, smooth_yob = 1, age_term = 1, smooth_age = 1, data = fitdt)
+```
+
+# extract predicted ever18
+
+```{r}
+p1 <- uga1k %>% as_tibble() %>% 
+  transmute(ever18 = pskewlogis(
+    17.99, 
+    shape = exp(V2), 
+    scale = exp(V1), 
+    skew = 1)) %>%
+  pull() %>% quantile95()
+
+p2 <- uga2k %>% as_tibble() %>%
+  uncount(length(yob_idx), .id = 'yobid') %>%
+  mutate(
+    yob = yob_u[yobid],
+    scale = exp(V1 + (yobid-1) * V3),
+    ever18 = pskewlogis(
+      17.99, 
+      shape = exp(V2), 
+      scale = scale, 
+      skew = 1)) %>% 
+  group_by(yob) %>%
+  summarise(median = quantile(ever18, .5), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+
+p3 <- uga3k %>% as_tibble() %>%
+  select(-log_yob_rw2_e) %>% 
+  rename_with(~yob_idx, yob_rw2:V22) %>% 
+  mutate(smp = 1:n()) %>% 
+  pivot_longer(`1970`:`1989`, names_to = 'yob', values_to = 'yobc') %>% 
+  mutate(yob = as.numeric(yob), 
+         ever18 = pskewlogis(
+           17.99,
+           shape = exp(log_shape),
+           scale = exp(intercept + yobc),
+           skew  = 1
+         )) %>% 
+  group_by(yob) %>%
+  summarise(median = quantile(ever18, .5), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+  
+p4 <- uga4k %>% as_tibble() %>%
+  select(-log_yob_rw2_e) %>% 
+  rename_with(~yob_u, yob_rw2:V22) %>% 
+  mutate(smp = 1:n()) %>%
+  pivot_longer(`1970`:`1989`, names_to = 'yob', values_to = 'yobc', names_transform = list(yob = as.numeric)) %>% 
+  uncount(length(age_u), .id = 'ageid') %>% 
+  mutate(
+    age = age_u[ageid],
+    yob = as.numeric(yob), 
+    ever18 = pskewlogis(
+       17.99,
+       shape = exp(log_shape),
+       scale = exp(intercept + yobc + (ageid-1) * beta_age),
+       skew  = 1
+    )) %>% 
+  group_by(yob, age) %>%
+  summarise(median = quantile(ever18, .5), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+
+p5 <- uga5k %>% as_tibble() %>%
+  select(-log_yob_rw2_e, -log_age_rw2_e) %>% 
+  rename_with(~paste0("y_", yob_u), yob_rw2:V22) %>% 
+  rename_with(~paste0("a_", age_u), age_rw2:V54) %>% 
+  mutate(smp = 1:n()) %>% 
+  pivot_longer(starts_with('y_'), names_to = c(NA, 'yob'), values_to = "yobc", names_sep = "_", names_transform = list(yob = as.integer)) %>%
+  pivot_longer(starts_with('a_'), names_to = c(NA, 'age'), values_to = "agec", names_sep = "_", names_transform = list(age = as.integer)) %>% 
+  mutate(
+    ever18 = pskewlogis(
+       17.99,
+       shape = exp(log_shape),
+       scale = exp(intercept + yobc + agec),
+       skew  = 1
+    )) %>% 
+  group_by(yob, age) %>%
+  summarise(median = mean(ever18), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+```
+
+# Plot
+
+```{r}
+p45 <- p4 %>%
+  bind_rows(p5, .id = "model") %>% 
+  uncount(4, .id = "svy") %>% 
+  mutate(svy = c(1999, 2005, 2012, 2018)[svy]) %>% 
+  mutate(current_age = svy - yob) %>% 
+  filter(current_age == age)
+
+afsby %>% as_tibble() %>% 
+  mutate(iso=substr(lab, 1, 2), svy=as.double(substr(lab, 3, 6))) %>%
+  ggplot() +
+  geom_pointrange(aes(yob, ever18, ymin=ci_l, ymax=ci_u), size=.3) +
+  geom_ribbon(aes(yob, median, ymin=ci_l, ymax=ci_u, fill = factor(model)), p45 %>% filter(model==2), alpha=.3) +
+  geom_line(aes(yob, median, color = factor(model)), p45 %>% filter(model==2)) +
+  geom_ribbon(aes(yob, median, ymin=ci_l, ymax=ci_u, fill = "3"), p3, alpha=.3) +
+  geom_line(aes(yob, median, color = "3"), p3) +
+  facet_wrap(~svy) +
+	labs(
+	  x = "Birth cohort", y = "", fill="",
+	  title = "Data and predicted percentage ever had sex under 18 - Guinea", 
+		subtitle = "among 18+ year-old respondents") +
+	coord_cartesian(, c(0, 1), expand = .1) +
+	scale_y_continuous(labels=scales::percent) + 
+  scale_fill_viridis_d(labels=c("M5 with age at report", "M3 without age at report"), end=.5) +
+	theme_bw() +
+  guides(color="none") +
+  theme(
+    strip.background = element_rect(fill='grey95', color = 'grey70', size = .3), 
+    panel.border = element_rect(color = 'grey70'),
+    legend.position = c(.85, .4), 
+    legend.background = element_rect(fill = NA)
+    ) -> g
+g
+
+quartz_off(g, "fig/predicted_Guinea", 7, 6,,1)
+```
+
+# Fitting
+
+```{r}
+uga1 = get_predict(to_skew = 1, weightv = "kish", data = fitdt)
+uga2 = get_predict(to_skew = 1, weightv = "kish", yob_term = 1, data = fitdt)
+uga3 = get_predict(to_skew = 1, weightv = "kish", yob_term = 1, smooth_yob = 1, data = fitdt)
+uga4 = get_predict(to_skew = 1, weightv = "kish", yob_term = 1, smooth_yob = 1, age_term = 1, data = fitdt)
+uga5 = get_predict(to_skew = 1, weightv = "kish", yob_term = 1, smooth_yob = 1, age_term = 1, smooth_age = 1, data = fitdt)
+```
+
+# extract predicted ever18
+
+```{r}
+q1 <- uga1 %>% as_tibble() %>% 
+  transmute(ever18 = pskewlogis(
+    17.99, 
+    shape = exp(V2), 
+    scale = exp(V1), 
+    skew  = exp(V3))) %>%
+  pull() %>% quantile95()
+
+q2 <- uga2 %>% as_tibble() %>%
+  uncount(length(yob_idx), .id = 'yobid') %>%
+  mutate(
+    yob = yob_u[yobid],
+    scale = exp(V1 + (yobid-1) * V4),
+    ever18 = pskewlogis(
+      17.99, 
+      shape = exp(V2), 
+      scale = scale, 
+      skew = exp(V3))) %>% 
+  group_by(yob) %>%
+  summarise(median = quantile(ever18, .5), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+
+q3 <- uga3 %>% as_tibble() %>%
+  select(-log_yob_rw2_e) %>% 
+  rename_with(~yob_idx, yob_rw2:V23) %>% 
+  mutate(smp = 1:n()) %>% 
+  pivot_longer(`1970`:`1989`, names_to = 'yob', values_to = 'yobc') %>% 
+  mutate(yob = as.numeric(yob), 
+         ever18 = pskewlogis(
+           17.99,
+           shape = exp(log_shape),
+           scale = exp(intercept + yobc),
+           skew  = exp(log_skew)
+         )) %>% 
+  group_by(yob) %>%
+  summarise(median = quantile(ever18, .5), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+  
+q4 <- uga4 %>% as_tibble() %>%
+  select(-log_yob_rw2_e) %>% 
+  rename_with(~yob_u, yob_rw2:V23) %>% 
+  mutate(smp = 1:n()) %>%
+  pivot_longer(`1970`:`1989`, names_to = 'yob', values_to = 'yobc', names_transform = list(yob = as.numeric)) %>% 
+  uncount(length(age_u), .id = 'ageid') %>% 
+  mutate(
+    age = age_u[ageid],
+    yob = as.numeric(yob), 
+    ever18 = pskewlogis(
+       17.99,
+       shape = exp(log_shape),
+       scale = exp(intercept + yobc + (ageid-1) * beta_age),
+       skew  = exp(log_skew)
+    )) %>% 
+  group_by(yob, age) %>%
+  summarise(median = quantile(ever18, .5), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+
+q5 <- uga5 %>% as_tibble() %>%
+  select(-log_yob_rw2_e, -log_age_rw2_e) %>% 
+  rename_with(~paste0("y_", yob_u), yob_rw2:V23) %>% 
+  rename_with(~paste0("a_", age_u), age_rw2:V55) %>% 
+  mutate(smp = 1:n()) %>% 
+  pivot_longer(starts_with('y_'), names_to = c(NA, 'yob'), values_to = "yobc", names_sep = "_", names_transform = list(yob = as.integer)) %>%
+  pivot_longer(starts_with('a_'), names_to = c(NA, 'age'), values_to = "agec", names_sep = "_", names_transform = list(age = as.integer)) %>% 
+  mutate(
+    ever18 = pskewlogis(
+       17.99,
+       shape = exp(log_shape),
+       scale = exp(intercept + yobc + agec),
+       skew  = exp(log_skew)
+    )) %>% 
+  group_by(yob, age) %>%
+  summarise(median = mean(ever18), 
+            ci_u = quantile(ever18, .975),
+            ci_l = quantile(ever18, .025))
+```
+
+# Plot
+
+```{r}
+# q45 <- q4 %>%
+#   bind_rows(q5, .id = "model") %>% 
+#   uncount(4, .id = "svy") %>% 
+#   mutate(svy = c(1999, 2005, 2012, 2018)[svy]) %>% 
+#   mutate(current_age = svy - yob) %>% 
+#   filter(current_age == age)
+
+# afsby %>% as_tibble() %>% 
+#   mutate(iso=substr(lab, 1, 2), svy=as.double(substr(lab, 3, 6))) %>%
+#   ggplot() +
+#   geom_pointrange(aes(yob, ever18, ymin=ci_l, ymax=ci_u), size=.3) +
+#   geom_ribbon(aes(yob, median, ymin=ci_l, ymax=ci_u, fill = factor(model)), q45 %>% filter(model==2), alpha=.3) +
+#   geom_line(aes(yob, median, color = factor(model)), q45 %>% filter(model==2)) +
+#   geom_ribbon(aes(yob, median, ymin=ci_l, ymax=ci_u, fill = "3"), p3, alpha=.3) +
+#   geom_line(aes(yob, median, color = "3"), q3) +
+#   facet_wrap(~svy) +
+# 	labs(
+# 	  x = "Birth cohort", y = "", fill="",
+# 	  title = "Data and predicted percentage ever had sex under 18 - Guinea", 
+# 		subtitle = "among 18+ year-old respondents") +
+# 	coord_cartesian(, c(0, 1), expand = .1) +
+# 	scale_y_continuous(labels=scales::percent) + 
+#   scale_fill_viridis_d(labels=c("M5 with age at report", "M3 without age at report"), end=.5) +
+# 	theme_bw() +
+#   guides(color="none") +
+#   theme(
+#     strip.background = element_rect(fill='grey95', color = 'grey70', size = .3), 
+#     panel.border = element_rect(color = 'grey70'),
+#     legend.position = c(.85, .4), 
+#     legend.background = element_rect(fill = NA)
+#     ) -> g
+# g
+
+r5 = uga5 %>% as_tibble() %>%
+  select(-log_yob_rw2_e, -log_age_rw2_e) %>% 
+  rename_with(~paste0("y_", yob_u), yob_rw2:V23) %>% 
+  rename_with(~paste0("a_", age_u), age_rw2:V53) %>% 
+  mutate(smp = 1:n()) %>% 
+  pivot_longer(starts_with('y_'), names_to = c(NA, 'yob'), values_to = "yobc", names_sep = "_", names_transform = list(yob = as.integer)) %>%
+  pivot_longer(starts_with('a_'), names_to = c(NA, 'age'), values_to = "agec", names_sep = "_", names_transform = list(age = as.integer)) %>% 
+  mutate(
+    shape = exp(log_shape),
+    scale = exp(intercept + yobc + agec),
+    skew  = exp(log_skew)
+  ) %>% select(smp, scale, shape, skew, yob, age)
+
+t5 = uga5k %>% as_tibble() %>%
+  select(-log_yob_rw2_e, -log_age_rw2_e) %>% 
+  rename_with(~paste0("y_", yob_u), yob_rw2:V22) %>% 
+  rename_with(~paste0("a_", age_u), age_rw2:V52) %>% 
+  mutate(smp = 1:n()) %>% 
+  pivot_longer(starts_with('y_'), names_to = c(NA, 'yob'), values_to = "yobc", names_sep = "_", names_transform = list(yob = as.integer)) %>%
+  pivot_longer(starts_with('a_'), names_to = c(NA, 'age'), values_to = "agec", names_sep = "_", names_transform = list(age = as.integer)) %>% 
+  mutate(
+    shape = exp(log_shape),
+    scale = exp(intercept + yobc + agec),
+    skew  = 1
+  ) %>% select(smp, scale, shape, skew, yob, age)
+
+ax = seq(5, 40, 1)
+plot_years = seq(1970, 1989, 5)
+
+sv2plot = 2016
+
+r5 %>% filter(skew==max(skew))
+r5 %>% filter(skew >= 2)
+
+s5 <- r5 %>% 
+  mutate(current_age = sv2plot - yob) %>% 
+  filter(yob %in% plot_years & smp==1 & age == current_age) %>% 
+  uncount(length(ax), .id = 'age') %>% 
+  mutate(age = age + 4, 
+         den = dskewlogis(age, scale, shape, skew))
+u5 <- t5 %>% 
+  mutate(current_age = sv2plot - yob) %>% 
+  filter(yob %in% plot_years & smp==1 & age == current_age) %>% 
+  uncount(length(ax), .id = 'age') %>% 
+  mutate(age = age + 4, 
+         den = dskewlogis(age, scale, shape, skew))
+v5 <- bind_rows(s5, u5, .id = 'model') %>%
+  mutate(model=as.integer(model), 
+         model=c("Log-skew-logistic", "Log-logistic")[model])
+
+di %>% 
+  filter(
+    afs != 0,
+    svy==sv2plot,
+    yob %in% plot_years) %>% 
+  mutate(afs = as.numeric(afs)) %>% 
+  filter(yob %in% c(1970)) %>% 
+  ggplot() +
+  geom_histogram(aes(afs,..density..), alpha=.5, fill="grey50", color="grey") +
+  # geom_density(aes(afs), alpha=.35, fill="grey50", color="grey40") +
+  geom_line(aes(age, den, color=model), v5 %>% filter(yob %in% c(1970)), size=1.2) +
+  facet_wrap(~yob) +
+	labs(
+	  x = "Age at first sex", y = "", color="Model",
+	  title = "Data and predicted age at first sex - Ethiopia",
+		subtitle = "among uncensored respondents") +
+  scale_fill_viridis_d() +
+  scale_color_viridis_d(end=.71) +
+	theme_bw() +
+  guides(fill='none') +
+  theme(
+    strip.background = element_rect(fill='grey95', color = 'grey70', size = .3),
+    panel.border = element_rect(color = 'grey70'),
+    legend.position = c(.85, .85),
+    legend.background = element_rect(fill = NA)
+    ) ->g2
+
+quartz_off(g2, "fig/predicted_Guinea_density", 7, 6,,1)
+```
