@@ -1,12 +1,12 @@
 ```{r}
+library(httpgd)
 library(tidyverse)
 library(ggrepel)
 library(ggpubr)
 library(cowplot)
 library(ktools)
-library(ggrepel)
 library(hrbrthemes)
-library("inlmisc")
+library(inlmisc)
 options(ggplot2.discrete.fill=unname(inlmisc::GetColors(9, scheme = "muted")), 
         ggplot2.discrete.colour=unname(inlmisc::GetColors(9, scheme = "muted")))
 library(survey)
@@ -15,67 +15,73 @@ library(rdhs)
 options(ggplot2.discrete.colour = hcl.colors(8))
 set.seed(111)
 
+library(tagger)
 
 theme = theme(strip.background = element_rect(fill='grey95', color = 'grey70', size = .3), 
-							panel.border = element_rect(color = 'grey70')) 
-              asds
+							panel.border = element_rect(color = 'grey70'))
 ```
 
 # Show biases asumptions
 
 ```{r}
 # Biases forms
-bias_lgt = function(age, mid=23, maxx=4.5, r=.4) 
-{
+bias_lgt = function(age, mid=23, maxx=4.5, r=.4) {
 	maxx / (1 + exp(-r * (age - mid))) - 2
 }
 
-# "Women" type bias
-bias1 = tibble(age = 15:55) %>% 
-	mutate(bias =  .5 - bias_lgt(age,,2.5) + rnorm(n(), 0, .3)) %>% 
-	ggplot() + geom_line(aes(age, bias)) + labs(x='Age at interview', y='Bias') +
-	theme(legend.position='none', panel.grid = element_blank()) 
 
-# "Men" type bias
-bias2 = tibble(age = 15:55) %>% 
-	mutate(bias =  .5 + bias_lgt(age, r = .25) + rnorm(n(), 0, .3)) %>% 
-	ggplot() + geom_line(aes(age, bias)) + labs(x='Age at interview', y='Bias') +
-	theme(legend.position='none', panel.grid = element_blank())
+tibble(age = 15:55) |> 
+	mutate(`Bias type I` =  .5 + bias_lgt(age, r = .25) + rnorm(n(), 0, .3)) |> 
+	mutate(`Bias type II` =  .5 - bias_lgt(age,,2.5) + rnorm(n(), 0, .3)) |> 
+  pivot_longer(-age, names_to = 'type', values_to = "bias") |>
+	ggplot() + 
+    geom_line(aes(age, bias)) + labs(x='Age at interview', y='Bias') +
+    facet_wrap(~type, 2) + 
+    tag_facets(tag_pool = char(A.1, B.1)) +
+    the_theme -> b
+
 yoblab = seq(1970, 1999, 5) %>% paste(.+4, sep="-") %>% magrittr::extract(1:5)
 
 # Resulting survey data
-biases = 
+biases_data = 
 	tibble(yob = 1970:2020, afs = 17) %>% 
 	uncount(4, .id = 'sv') %>% mutate(sv = 2000 + (sv-1)*5) %>% 
-	mutate(aar = sv - yob) %>% 
-	mutate(include = aar >=15) %>% filter(include) %>% 
-	mutate(bias_women = .5-bias_lgt(aar,,2.5) + rnorm(n(), 0, .3)) %>% 
-	mutate(bias_men =  .5+bias_lgt(aar, r=.25) + rnorm(n(), 0, .3)) %>% 
-	mutate(yobgr = findInterval(yob, seq(1970, 1999, 5))) %>% 
+	mutate(
+    aar = sv - yob, 
+    include = aar >=15) %>% 
+  filter(include) %>% 
+	mutate(
+    bias_women = .5-bias_lgt(aar,,2.5) + rnorm(n(), 0, .3),
+    bias_men =  .5+bias_lgt(aar, r=.25) + rnorm(n(), 0, .3),
+    yobgr = findInterval(yob, seq(1970, 1999, 5))) %>% 
 	pivot_longer(bias_women:bias_men, names_prefix='bias_', names_to='type', values_to='bias') %>% 
 	group_by(sv, yobgr, type) %>% 
 	summarise(afs = median(afs + bias)) %>% 
 	filter(yobgr != 6) %>%
 	group_by(type, yobgr) %>% 
-	mutate(note = if_else(sv == min(sv), yoblab[yobgr], NA_character_)) %>% 
-	mutate(type = if_else(type == 'men', 'I', 'II')) %>% 
+	mutate(
+    note = if_else(sv == min(sv), yoblab[yobgr], NA_character_),
+    type = if_else(type == 'men', 'Bias type I', 'Bias type II'),
+    sv = paste("Survey", sv)
+    )
+
+biases_data |> 
 	ggplot() +
-		geom_hline(yintercept=17, color = 'dimgrey', linetype = 'dashed') +
-		geom_line(aes(sv, afs, color = factor(yobgr, labels = yoblab), linetype = factor(yobgr)), size=.7) +
-		geom_point(aes(sv, afs, color = factor(yobgr, labels = yoblab), linetype = factor(yobgr)) ) +
-		geom_label_repel(aes(sv, afs, color = factor(yobgr, labels = yoblab), label = note), size=2) +
-		facet_wrap('type')+theme_bw()+
-		theme(legend.position='none', panel.grid = element_blank())+ 
-		labs(x='Survey year', y = 'Median AFS') +
-		coord_cartesian(ylim=c(13, 20)) +
+  geom_hline(yintercept=17, color = 'dimgrey', linetype = 'dashed') +
+  geom_col(
+    aes(factor(yobgr, labels = yoblab), afs), 
+    fill='#FCF4DC', color = '#A57706', size=.3, 
+    position = position_dodge2(, "single")) +
+  geom_text(aes(yobgr, 7, label = sv), color = '#0A2933', 
+    angle = 90, position = position_dodge2(.9,"single")) +
+	facet_wrap(~type, 2) +
+  tag_facets(tag_pool = char(A.2, B.2)) +
+	coord_cartesian(expand = .1) +
+	labs(x = "Birth cohort", y = "Median AFS") + 
+  the_theme -> g
 
-g = ggdraw(biases) +
-	draw_plot(bias2 + theme_classic(), .21, .07, .3, .2, hjust=-.01, vjust=-.1) +
-	draw_plot(bias1 + theme_classic(), .61, .07, .3, .2, hjust=-.25, vjust=-.1)
-quartz_off(g, 'Bias_type' , 7, 5)
-
-
-```
+ggarrange(b, g, ncol=2, widths = c(.3, .7))
+hgd_plot(width = 700, height = 500, renderer = "pdf", file = "Bias_type.pdf")
 
 # show cases of within-cohort inconsistency
 
@@ -175,7 +181,7 @@ afsby <- svyby(formula = ~ever18,
                FUN = svyciprop, 
                vartype = "ci")
 	
-afsby %>% 
+plot_data <- afsby %>%
   mutate(svy = substr(lab, 3, 6), iso = substr(lab, 1, 2)) %>% 
   filter(!(iso == "ET" & sex == "male")) %>% 
   filter(!(iso == "GN" & sex == "female")) %>% 
@@ -190,7 +196,16 @@ afsby %>%
          grp = factor(grp, levels = c("Male - Guinea", 
 		                                  "Male - Zambia", 
 		                                  "Female - Ethiopia", 
-		                                  "Female - Senegal"))) %>%
+		                                  "Female - Senegal")))
+  
+plot_data |>
+mutate(
+  svy = as.numeric(svy),
+  aar = paste0(
+    svy - as.numeric(substr(yobgrp, 6, 9)), 
+    "-",
+    svy - as.numeric(substr(yobgrp, 1, 4))),
+  lab = paste0(lab, "\n", bracket(aar))) |> 
   ggplot() +
 		geom_col(
 		  aes(yobgrp, ever18), 
@@ -199,7 +214,7 @@ afsby %>%
     geom_linerange(
       aes(yobgrp, ever18, ymin = ci_l, ymax = ci_u),
       position = position_dodge2(.9, "single"), size = 1.2, color = "#A57706") +
-		geom_text(aes(yobgrp, 0.15, label = lab), color = '#0A2933', size = 2, 
+		geom_text(aes(yobgrp, 0.08, label = lab), color = '#0A2933', size = 2.3, 
 		          angle = 90, position = position_dodge2(.9,"single")) +
 		facet_grid(rows = vars(grp), space="free", scales="free") +
 		labs(x = "Birth cohort", y = "", fill = "Survey year", 

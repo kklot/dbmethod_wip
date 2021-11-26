@@ -249,8 +249,7 @@ ed %>%
 
 ```{r}
 library(ggpubr)
-g12 <- ggarrange(g1, g3, g2, g4, ncol=2, nrow=2, common.legend = TRUE, legend = "bottom")
-# ggarrange(ggarrange(g1, g2, ncol=2, common.legend = 1), g3, nrow=2, common.legend = TRUE, legend = "bottom")
+ggarrange(g1, g3, g2, g4, ncol=2, nrow=2, labels=bracket(LETTERS[1:4]), common.legend = TRUE, legend = "bottom")
 quartz_off(g12, name = "median_density", 7, 7, open=1)
 
 ```
