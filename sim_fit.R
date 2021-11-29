@@ -7,11 +7,10 @@ params:
   sample_size: 1000
   bias: "none"
   trend: "none"
-  theK: 100
 ---
 
 ```{r include=FALSE, message=FALSE, warning=FALSE}
-# params = list(nsv=2, sample_size=1000, bias='none', trend='increase')
+# params = list(nsv=2, sample_size=1000, bias='none', trend='none')
 
 library(abind)
 library(TMB)
@@ -21,10 +20,8 @@ library(tidyverse)
 library(ktools)
 library(loo)                # 
 
-save_to = "outputs_men_women/"
 # Check if input from bash is correct
 myname = unlist(params) %>% paste0(names(.), .) %>% paste0(collapse="_") %>% paste0(".rds")
-myname = paste0(save_to, myname)
 if (file.exists(myname))
 	stop("did it")
 message(myname)
@@ -42,16 +39,11 @@ elig_age      <- 15:49 # age eligible for including in the year of surveys
 
 # take age distribution of SZ
 sz = data.frame(
-    age = c(
-        15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-        33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49
-    ),
-    n = c(
-        525, 566, 514, 469, 443, 464, 351, 385, 321, 316, 262, 301, 273, 241,
-        222, 245, 211, 188, 184, 185, 151, 184, 164, 235, 123, 151, 136, 144,
-        109, 116, 108, 136, 124, 136, 81
-    )
-)
+	age=c(15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+				33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49),
+	n=c(525, 566, 514, 469, 443, 464, 351, 385, 321, 316, 262, 301, 273, 241,
+			222, 245, 211, 188, 184, 185, 151, 184, 164, 235, 123, 151, 136, 144,
+			109, 116, 108, 136, 124, 136, 81))
 
 sz %>% {approxfun(.[,1], .[,2]/sum(.[,2]), yleft=0, yright=0)} -> age_weight
 
@@ -106,16 +98,11 @@ afsd = my_pop %>%
 bias_none = function(age) 0
 bias_norm = function(age, sd = 0.3) rnorm(1, 0, sd)
 bias_logis = function(age, max = 4, r = .5, mid = 23) max / (1 + exp(-r*(age - mid))) - max/2
-
-bias_lgt = function(age, mid=23, maxx=4.5, r=.4) maxx / (1 + exp(-r * (age - mid))) - 2
-bias_women = function(age) .5 - bias_lgt(age, ,2.5) 
-bias_men = function(age) .5 + bias_lgt(age, r = .25) 
+# bias_logis(15:49, r = .5) %>% plott(15:49, .)
 
 if (params$bias == "none") bias_f = bias_none
 if (params$bias == "norm") bias_f = bias_norm
 if (params$bias == "logis") bias_f = bias_logis
-if (params$bias == "men") bias_f = bias_men
-if (params$bias == "women") bias_f = bias_women
 
 plott(bias_f(15:49))
 ```
@@ -128,7 +115,7 @@ afsd = afsd %>%
   mutate(svy = 2000 + 5 * (svy - 1))  %>% 
   mutate(age = svy - yob) %>%
 	filter(age %in% 15:49) %>% 
-  mutate(bias = bias_f(age) + rnorm(n(), 0, 0.3), biased_afs = afs + bias) %>% 
+  mutate(bias = bias_f(age), biased_afs = afs + bias) %>% 
   mutate(weight = age_weight(age)) %>% 
   mutate(event = if_else(biased_afs <= age, 1, 0))
 ```
@@ -139,67 +126,57 @@ afsd = afsd %>%
 source("get_posterior.R")
  
 # parallel
-post = get_posterior(data=afsd, sample_size=params$sample_size, K=params$theK)
+post = get_posterior(data=afsd, sample_size=params$sample_size, K=100)
 attributes(post)$ref_par = ref 
-
-# saveRDS(post, paste0("post/", myname))
 ```
 
 # Get some stats
 
 ```{r get_stat}
 X = attributes
-pdata %<>% mutate(median = qskewlogis(.5, scale, shape, skew))
+ekld = function(x) x %>% aperm(c(1,3,2)) %>% rowMeans(dims = 2) %>% colSums %>% mean
 
 # apply to one scenario with 1000 posterior samples
-# x = post[[1]]
+
+x = post[[1]]
+
 stats = function(x, agref = 1) {
 	realskew = x[, 'log_skew'] %>% exp
+	# skewe = realskew %>% quantile95 %>% t %>% as.data.table(1) %>% rename(skew_lo=lo, skew_up=up, skew_med=med)
 	realshape = x[, 'log_shape'] %>% exp
+	# shapee = realshape %>% quantile95 %>% t %>% as.data.table(1) %>% rename(shape_lo=lo, shape_up=up, shape_med=med)
+
 	ageref  = tibble(age=X(x)$age, id=X(x)$age_id) %>% mutate(agr = findInterval(age, seq(15, 50, 5))) 
 	agecoef = x[, ageref %>% filter(agr==agref) %>% pull(id)] %>% rowMeans
-	realscale = exp(sweep(x[, X(x)$yob_id], 1, x[, 'intercept'], '+') + agecoef) 
 
-	getmed = function(y, x) {
-		medx = qskewlogis(.5, realscale[y, ], realshape[y], realskew[y]) %>% 
-			tibble(med = ., yob = X(x)$yob) %>% 
-			left_join(pdata, 'yob')  %>% 
-			select(yob, med, median) %>% 
-			filter(row_number() == 1 | row_number() == max(row_number()))  %>% 
-			mutate(diff  = med - median)  
-		tibble(first_diff = medx$diff[1], 
-					 last_diff = medx$diff[2], 
-					 trend_diff = medx$med[2] - medx$med[1], 
-					 real_diff = medx$median[2] - medx$median[1], 
-		)
-	}
+	realscale = exp(sweep(x[, attributes(x)$yob_id], 1, x[, 'intercept'], '+') + agecoef) 
+	qskewlogis(.5, realscale[1, ], realshape[1], realskew[1]) %>% histt
 
-	st = lapply(1:params$theK, getmed, x = x) %>% bind_rows()  
 
-	tr = st %>%  
-		mutate(increase = trend_diff > 0) %>% 
-		group_by(increase) %>% 
-		summarise(n = n(), 
-							trend_diff = mean(trend_diff), 
-							.groups = 'drop')  
-
-	tibble(first_diff = mean(st$first_diff), 
-				 last_diff = mean(st$last_diff), 
-				 trend_diff = mean(st$trend_diff), 
-				 pc_increase = tr$n[2]/(tr$n[1] + tr$n[2]), 
-				 trend_diff_real = st$real_diff[1], 
-				 trend_diff_pos = tr$trend_diff[2], 
-				 trend_diff_neg = tr$trend_diff[1])
-
+	# qskewlogis(.5, 1/20, 9, 1.1)
+	kld = lapply(1:1000, getQld)
+	list(kld = kld, cvr = cvr)
 }
 
-# tata = getstats (1)
 getstats = function(aref) 
 {
-	parallel::mclapply(post, stats, agref = aref)  %>% 
-		bind_rows(.id = 'sample')  %>% 
-		mutate(ageref = aref, nsv = params$nsv, size = params$sample_size, 
-					 trend = params$trend, bias = params$bias, nsample = params$theK) 
+	tst = parallel::mclapply(post, stats, agref = aref) 
+	kldi = sapply(seq_along(tst), function(x) 
+								sapply(1:1000, function(y) 
+											 tst[[x]]$kld[[y]]) %>% colSums %>% mean) %>% mean
+
+	lapply(seq_along(tst), function(x) tst[[x]]$cvr) %>% rbindlist(idcol = "sim") %>% 
+		group_by(sim) %>% 
+		summarise(ishape = sum(inside_shape)/n(),
+							iscale = sum(inside_scale)/n(),
+							iskew = sum(inside_skew)/n(), 
+							shape_b = sum(shape_med - shape)/n(), 
+							skew_b = sum(skew_med - skew)/n(), 
+							scale_b = sum(scale_med - scale)/n(), 
+							)  %>% 
+		select(-sim)  %>% 
+		colMeans  %>% 
+		c(kldi, nsv = params$nsv, size = params$sample_size, trend = params$trend, bias = params$bias) 
 }
 	
 out1 = getstats(1)
@@ -207,8 +184,10 @@ out2 = getstats(2)
 out3 = getstats(3)
 out4 = getstats(4)
 
-out = bind_rows(out1, out2, out3, out4)
+out = list(out1, out2, out3, out4)
 
+getwd()
 saveRDS(out, myname)
+# saveRDS(out, paste0("output/", myname))
 ```
 
