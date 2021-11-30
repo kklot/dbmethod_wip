@@ -21,7 +21,8 @@ library(tidyverse)
 library(ktools)
 library(loo)                # 
 
-save_to = "outputs_men_women/"
+dir.create("out", FALSE)
+save_to = "out"
 # Check if input from bash is correct
 myname = unlist(params) %>% paste0(names(.), .) %>% paste0(collapse="_") %>% paste0(".rds")
 myname = paste0(save_to, myname)
@@ -135,7 +136,7 @@ source("get_posterior.R")
 post = get_posterior(data=afsd, sample_size=params$sample_size, K=params$theK)
 attributes(post)$ref_par = ref 
 
-# saveRDS(post, paste0("post/", myname))
+saveRDS(post, paste0("out/", myname))
 ```
 
 # Get some stats
