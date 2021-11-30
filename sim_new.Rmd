@@ -1,0 +1,166 @@
+---
+title: "DB Method"
+author: "Kinh Nguyen"
+date: "`r Sys.Date()`"
+params:
+  nsv: 3
+  sample_size: 1000
+  bias: "none"
+  trend: "none"
+  theK: 100
+---
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+# params = list(nsv=2, sample_size=1000, bias='none', trend='increase')
+
+library(abind)
+library(TMB)
+library(data.table)
+library(tidyverse)
+# remotes::install_github('kklot/ktools')
+library(ktools)
+library(loo)                # 
+
+dir.create("out", FALSE)
+save_to = "out"
+# Check if input from bash is correct
+myname = unlist(params) %>% paste0(names(.), .) %>% paste0(collapse="_") %>% paste0(".rds")
+myname = paste0(save_to, myname)
+if (file.exists(myname))
+	stop("did it")
+message(myname)
+
+set.seed(123)
+options(mc.cores = parallel::detectCores()-2)
+```
+
+## Pool population
+
+```{r}
+N <- 10^6
+birth_cohorts <- 1940:2005
+wanted_cohort <- 1970:2005
+elig_age      <- 15:49 # age eligible for including in the year of surveys
+
+# take age distribution of SZ
+sz = data.frame(
+    age = c(
+        15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+        33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49
+    ),
+    n = c(
+        525, 566, 514, 469, 443, 464, 351, 385, 321, 316, 262, 301, 273, 241,
+        222, 245, 211, 188, 184, 185, 151, 184, 164, 235, 123, 151, 136, 144,
+        109, 116, 108, 136, 124, 136, 81
+    )
+)
+sz %>% {approxfun(.[,1], .[,2]/sum(.[,2]), yleft=0, yright=0)} -> age_weight
+
+my_pop <- data.table(id  = 1:N, yob = sample(birth_cohorts, N, T), afs=0)
+
+# choose survey year 5 year apart starting backward from 2020
+# maximum 7
+chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
+    mutate(age = svy - bch) %>%
+    filter(age >= 15) %>%
+    group_by(svy) %>%
+    summarise(min = min(age), max = max(age)) %>%
+    arrange(desc(svy)) %>%
+    mutate(id = 1:nrow(.) %% 5) %>%
+    filter(svy == 2020 | id == 0) %>%
+    slice_head(n = params$nsv) %>%
+    pull(svy)
+
+chosen_svy
+```
+
+# Load dll
+
+```{r}
+openmp(1) # we do multiple fit on parallel so avoiding using it in TMB
+compile("model.cpp")
+dyn.load(dynlib("model"))
+invisible(config(tape.parallel=FALSE, DLL='model'))
+source("tmb_sampling.R")
+```
+
+# AFS parameters and sampling
+
+Following skew log-logistic distribution, at the begining, year 1900
+
+```{r}
+ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
+qskewlogis(.5, ref$scale, ref$shape, ref$skew) # 17
+
+min_scale = 0.07; qskewlogis(.5, min_scale, ref$shape, ref$skew) 
+max_scale = 0.0555; qskewlogis(.5, max_scale, ref$shape, ref$skew) 
+
+if (params$trend == "none") {
+	pdata = tibble(yob = birth_cohorts, scale = ref$scale, skew = ref$skew, shape = ref$shape)
+} else if (params$trend == "increase") {
+	scalev = seq(min_scale, max_scale, length.out = length(birth_cohorts))
+	pdata  = tibble(yob = birth_cohorts, scale = scalev, skew = ref$skew, shape = ref$shape)
+} else if (params$trend == "decrease") {
+	scalev = seq(max_scale, min_scale, length.out = length(birth_cohorts))
+	pdata  = tibble(yob = birth_cohorts, scale = scalev, skew = ref$skew, shape = ref$shape)
+}
+
+# median difference
+pdata %>%
+    mutate(median = qskewlogis(.5, scale, shape, skew)) %>%
+    ggplot(aes(yob, median)) +
+    geom_line() +
+    geom_vline(xintercept = range(wanted_cohort))
+```
+
+# Generate biases
+
+```{r}
+bias_f <- switch(params$bias,
+    "none" = function(age) 0,
+    "norm" = function(age, sd = 0.3) rnorm(1, 0, sd),
+    "logis" = function(age, max = 4, r = .5, mid = 23) max / (1 + exp(-r * (age - mid))) - max / 2,
+    "women" = function(age) .5 - bias_lgt(age, , 2.5),
+    "men" = function(age) .5 + bias_lgt(age, r = .25)
+)
+
+# plott(bias_f(15:49))
+```
+
+# Generate pooled and survey data
+
+```{r}
+## Generate true afs
+afsd = my_pop %>%
+    left_join(pdata, "yob") %>%
+    arrange(yob) %>%
+    group_by(yob) %>%
+    mutate(afs = rskewlogis(n(), scale, shape, skew)) %>%
+    select(id, yob, afs)
+
+afsd <- afsd %>%
+    uncount(params$nsv, .id = "svy") %>%
+    mutate(
+        svy = chosen_svy[svy],
+        age = svy - yob
+    ) %>%
+    filter(age %in% 15:49) %>%
+        mutate(
+            bias = bias_f(age) + rnorm(n(), 0, 0.3),
+            biased_afs = afs + bias,
+            weight = age_weight(age),
+            event = if_else(biased_afs <= age, 1, 0)
+        )
+```
+
+# Fit model
+
+```{r get_post}
+source("get_posterior.R")
+ 
+# parallel
+post = get_posterior(data=afsd, sample_size=params$sample_size, K=params$theK)
+attributes(post)$ref_par = ref 
+
+saveRDS(post, paste0("out/", myname))
+```
