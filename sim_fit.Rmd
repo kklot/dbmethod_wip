@@ -102,21 +102,15 @@ pdata %>%
 # Generate biases
 
 ```{r}
-bias_none = function(age) 0
-bias_norm = function(age, sd = 0.3) rnorm(1, 0, sd)
-bias_logis = function(age, max = 4, r = .5, mid = 23) max / (1 + exp(-r*(age - mid))) - max/2
+bias_f <- switch(params$bias,
+    "none" = function(age) 0,
+    "norm" = function(age, sd = 0.3) rnorm(1, 0, sd),
+    "logis" = function(age, max = 4, r = .5, mid = 23) max / (1 + exp(-r * (age - mid))) - max / 2,
+    "women" = function(age) .5 - bias_lgt(age, , 2.5),
+    "men" = function(age) .5 + bias_lgt(age, r = .25)
+)
 
-bias_lgt = function(age, mid=23, maxx=4.5, r=.4) maxx / (1 + exp(-r * (age - mid))) - 2
-bias_women = function(age) .5 - bias_lgt(age, ,2.5) 
-bias_men = function(age) .5 + bias_lgt(age, r = .25) 
-
-if (params$bias == "none") bias_f = bias_none
-if (params$bias == "norm") bias_f = bias_norm
-if (params$bias == "logis") bias_f = bias_logis
-if (params$bias == "men") bias_f = bias_men
-if (params$bias == "women") bias_f = bias_women
-
-plott(bias_f(15:49))
+# plott(bias_f(15:49))
 ```
 
 # Generate survey data
