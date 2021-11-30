@@ -127,17 +127,30 @@ bias_f <- switch(params$bias,
 # plott(bias_f(15:49))
 ```
 
-# Generate survey data
+# Generate pooled and survey data
 
 ```{r}
-afsd = afsd %>%
-  uncount(params$nsv, .id = "svy") %>% 
-  mutate(svy = 2000 + 5 * (svy - 1))  %>% 
-  mutate(age = svy - yob) %>%
-	filter(age %in% 15:49) %>% 
-  mutate(bias = bias_f(age) + rnorm(n(), 0, 0.3), biased_afs = afs + bias) %>% 
-  mutate(weight = age_weight(age)) %>% 
-  mutate(event = if_else(biased_afs <= age, 1, 0))
+## Generate true afs
+afsd = my_pop %>%
+    left_join(pdata, "yob") %>%
+    arrange(yob) %>%
+    group_by(yob) %>%
+    mutate(afs = rskewlogis(n(), scale, shape, skew)) %>%
+    select(id, yob, afs)
+
+afsd <- afsd %>%
+    uncount(params$nsv, .id = "svy") %>%
+    mutate(
+        svy = chosen_svy[svy],
+        age = svy - yob
+    ) %>%
+    filter(age %in% 15:49) %>%
+        mutate(
+            bias = bias_f(age) + rnorm(n(), 0, 0.3),
+            biased_afs = afs + bias,
+            weight = age_weight(age),
+            event = if_else(biased_afs <= age, 1, 0)
+        )
 ```
 
 # Fit model
