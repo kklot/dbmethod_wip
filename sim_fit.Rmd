@@ -54,20 +54,33 @@ sz = data.frame(
         109, 116, 108, 136, 124, 136, 81
     )
 )
-
 sz %>% {approxfun(.[,1], .[,2]/sum(.[,2]), yleft=0, yright=0)} -> age_weight
 
 my_pop <- data.table(id  = 1:N, yob = sample(birth_cohorts, N, T), afs=0)
+
+# choose survey year 5 year apart starting backward from 2020
+# maximum 7
+chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
+    mutate(age = svy - bch) %>%
+    filter(age >= 15) %>%
+    group_by(svy) %>%
+    summarise(min = min(age), max = max(age)) %>%
+    arrange(desc(svy)) %>%
+    mutate(id = 1:nrow(.) %% 5) %>%
+    filter(svy == 2020 | id == 0) %>%
+    slice_head(n = params$nsv) %>%
+    pull(svy)
+
+chosen_svy
 ```
 
 # Load dll
 
 ```{r}
 openmp(1) # we do multiple fit on parallel so avoiding using it in TMB
-compile('model.cpp')
-dyn.load(dynlib('model'))
+compile("model.cpp")
+dyn.load(dynlib("model"))
 invisible(config(tape.parallel=FALSE, DLL='model'))
-
 source("tmb_sampling.R")
 ```
 
