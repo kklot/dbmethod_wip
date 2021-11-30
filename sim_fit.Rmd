@@ -36,8 +36,9 @@ options(mc.cores = parallel::detectCores()-2)
 ## Pool population
 
 ```{r}
-N             <- 10^6
-birth_cohorts <- 1900:2021
+N <- 10^6
+birth_cohorts <- 1940:2005
+wanted_cohort <- 1970:2005
 elig_age      <- 15:49 # age eligible for including in the year of surveys
 
 # take age distribution of SZ
