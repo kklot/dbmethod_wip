@@ -11,8 +11,7 @@ params:
 ---
 
 ```{r include=FALSE, message=FALSE, warning=FALSE}
-# params = list(nsv=2, sample_size=1000, bias='none', trend='increase')
-
+# params = list(nsv=2, sample_size=1000, bias='none', trend='increase', theK=100)
 library(abind)
 library(TMB)
 library(data.table)
