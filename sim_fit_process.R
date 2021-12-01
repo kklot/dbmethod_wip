@@ -32,8 +32,11 @@ wanted_cohort <- 1970:2005
 ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
 qskewlogis(.5, ref$scale, ref$shape, ref$skew) # 17
 
-min_scale = 0.07; qskewlogis(.5, min_scale, ref$shape, ref$skew) 
-max_scale = 0.0555; qskewlogis(.5, max_scale, ref$shape, ref$skew) 
+min_scale = 0.07
+qskewlogis(.5, min_scale, ref$shape, ref$skew)
+
+max_scale = 0.0555
+qskewlogis(.5, max_scale, ref$shape, ref$skew)
 
 if (params$trend == "none") {
     pdata = tibble(yob = birth_cohorts, scale = ref$scale, skew = ref$skew, shape = ref$shape)
