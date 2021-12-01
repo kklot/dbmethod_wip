@@ -13,9 +13,10 @@ get_posterior <- function(to_skew = 1,
     loop_fn <- function(svysmp) {
         cat(svysmp, "...")
         # Generate a survey dataset
+
         fitdt <- data %>%
             group_by(svy) %>%
-            mutate(take = id %in% sample(id, sample_size, prob = weight)) %>%
+            mutate(take = id %in% sample(id, sample_size, prob = sampling_weight)) %>%
             filter(take) %>%
             select(svy, afs, biased_afs, age, event, yob, weight)
 		
