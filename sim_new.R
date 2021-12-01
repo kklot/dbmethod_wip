@@ -1,4 +1,3 @@
-
 library(abind)
 library(TMB)
 library(data.table)
@@ -9,15 +8,11 @@ library(loo)
 set.seed(123)
 options(mc.cores = parallel::detectCores()-2)
 
-
- # cluster stuffs
-
+# cluster stuffs
 task_id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 base_dir <- "/scratch/fuchs/fias/knguyen/"
 save_to  <- paste0(base_dir, "db_mt_fix_weight/")
 dir.create(save_to, FALSE)
-
-
 
 scenarios <- crossing(
     nsv = 2:7,
@@ -36,10 +31,7 @@ myname <- unlist(params) %>%
     paste0(".rds")
 mypath <- paste0(save_to, myname)
 
-
 ## Pool population
-
-
 N <- 10^6
 birth_cohorts <- 1940:2005
 wanted_cohort <- 1970:2005
@@ -78,19 +70,15 @@ chosen_svy
 
 
 # Load dll
-
-
-openmp(1) # we do multiple fit on parallel so avoiding using it in TMB
+# we do multiple fit on parallel so avoiding using it in TMB
+openmp(1)
 compile("model.cpp")
 dyn.load(dynlib("model"))
 invisible(config(tape.parallel=FALSE, DLL='model'))
 source("tmb_sampling.R")
 
-
 # AFS parameters and sampling
-
-Following skew log-logistic distribution, at the begining, year 1900
-
+# Following skew log-logistic distribution, at the begining, year 1900
 
 ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
 qskewlogis(.5, ref$scale, ref$shape, ref$skew) # 17
@@ -115,10 +103,7 @@ pdata %>%
     geom_line() +
     geom_vline(xintercept = range(wanted_cohort))
 
-
 # Generate biases
-
-
 bias_f <- switch(params$bias,
     "none" = function(age) 0,
     "norm" = function(age, sd = 0.3) rnorm(1, 0, sd),
@@ -127,12 +112,7 @@ bias_f <- switch(params$bias,
     "men" = function(age) .5 + bias_lgt(age, r = .25)
 )
 
-# plott(bias_f(15:49))
-
-
 # Generate pooled and survey data
-
-
 ## Generate true afs
 afsd = my_pop %>%
     left_join(pdata, "yob") %>%
@@ -155,14 +135,11 @@ afsd <- afsd %>%
             event = if_else(biased_afs <= age, 1, 0)
         )
 
-
 # Fit model
-
-
 source("get_posterior.R")
  
-# parallel
+# parallel within this
 post = get_posterior(data=afsd, sample_size=params$sample_size, K=params$theK)
 attributes(post)$ref_par = ref 
 
-saveRDS(post, paste0("out/", mypath))
+saveRDS(post, mypath)
