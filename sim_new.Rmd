@@ -148,7 +148,7 @@ afsd <- afsd %>%
         mutate(
             bias = bias_f(age) + rnorm(n(), 0, 0.3),
             biased_afs = afs + bias,
-            weight = age_weight(age),
+            sampling_weight = age_weight(age),
             event = if_else(biased_afs <= age, 1, 0)
         )
 ```
