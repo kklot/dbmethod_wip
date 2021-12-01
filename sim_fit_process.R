@@ -48,6 +48,8 @@ if (params$trend == "none") {
     pdata = tibble(yob = birth_cohorts, scale = scalev, skew = ref$skew, shape = ref$shape)
 }
 
+real_diff_1970_2005 <- tibble(trend = char(none, increase, decrease), real_diff = c(0, 2.34358, -1.891448))
+saveRDS(real_diff_1970_2005)
 pdata %<>% mutate(median = qskewlogis(.5, scale, shape, skew))
 
 # Get some stats
