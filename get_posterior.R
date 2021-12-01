@@ -5,10 +5,14 @@ get_posterior <- function(to_skew = 1,
                           smooth_yob = 1,
                           age_order = 1,
                           yob_order = 1,
+                          weightv = "none",
                           interval_censor = 0,
                           data,
                           sample_size,
                           K = 1000, S = 1000, verbose = F, check = F) {
+
+    if (weightv == "none")
+        data$sv_weight = 1
 
     loop_fn <- function(svysmp) {
         cat(svysmp, "...")
@@ -18,7 +22,7 @@ get_posterior <- function(to_skew = 1,
             group_by(svy) %>%
             mutate(take = id %in% sample(id, sample_size, prob = sampling_weight)) %>%
             filter(take) %>%
-            select(svy, afs, biased_afs, age, event, yob, weight)
+            select(svy, afs, biased_afs, age, event, yob, sv_weight)
 		
 		# Check if the age distribution is ok
 		# fitdt %>% ggplot(aes(age), alpha=.5) +
@@ -32,7 +36,7 @@ get_posterior <- function(to_skew = 1,
             age = fitdt$age - min(fitdt$age),
             event = fitdt$event,
             yob = fitdt$yob - min(fitdt$yob),
-            svw = fitdt$weight,
+            svw = fitdt$sv_weight,
             to_skew = to_skew,
             age_term = age_term,
             smooth_age = smooth_age,
