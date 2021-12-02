@@ -68,7 +68,6 @@ chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
 
 chosen_svy
 
-
 # Load dll
 # we do multiple fit on parallel so avoiding using it in TMB
 openmp(1)
@@ -83,8 +82,11 @@ source("tmb_sampling.R")
 ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
 qskewlogis(.5, ref$scale, ref$shape, ref$skew) # 17
 
-min_scale = 0.07; qskewlogis(.5, min_scale, ref$shape, ref$skew) 
-max_scale = 0.0555; qskewlogis(.5, max_scale, ref$shape, ref$skew) 
+min_scale = 0.07
+qskewlogis(.5, min_scale, ref$shape, ref$skew)
+
+max_scale = 0.0555
+qskewlogis(.5, max_scale, ref$shape, ref$skew)
 
 if (params$trend == "none") {
 	pdata = tibble(yob = birth_cohorts, scale = ref$scale, skew = ref$skew, shape = ref$shape)
@@ -134,6 +136,8 @@ afsd <- afsd %>%
             sampling_weight = age_weight(age),
             event = if_else(biased_afs <= age, 1, 0)
         )
+
+pdata %<>% mutate(median = qskewlogis(.5, scale, shape, skew))
 
 # Fit model
 source("get_posterior.R")
