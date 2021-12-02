@@ -21,7 +21,7 @@ get_posterior <- function(to_skew = 1,
             mutate(take = id %in% sample(id, sample_size, prob = sampling_weight)) %>%
             filter(take) %>%
             select(svy, afs, biased_afs, age, event, yob, sv_weight)
-
+        
         # all data and meta data
         idata <- list(
             afs = fitdt$biased_afs,
@@ -135,7 +135,7 @@ get_posterior <- function(to_skew = 1,
                 smp[1, "log_shape"] %>% exp(),
                 smp[1, "log_skew"] %>% exp()
             )
-            est_i <- tibble(yob=attributes(smp)$yob, med=med_i)            
+            est_i <- tibble(yob = attributes(smp)$yob, med = med_i)
             fitdt %>%
                 ggplot() +
                 # geom_point(aes(yob, afs, color = factor(svy), alpha = factor(sv_weight)), se = F) +

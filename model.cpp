@@ -16,14 +16,14 @@ Type objective_function<Type>::operator() ()
 
   DATA_VECTOR(svw);
 
-	// meta data
-	DATA_INTEGER(to_skew);
-	DATA_INTEGER(age_term);
-	DATA_INTEGER(yob_term);
-	DATA_INTEGER(smooth_age);
-	DATA_INTEGER(smooth_yob);
-	DATA_INTEGER(interval_censor);
-	DATA_IVECTOR(to_fit);
+  // meta data
+  DATA_INTEGER(to_skew);
+  DATA_INTEGER(age_term);
+  DATA_INTEGER(yob_term);
+  DATA_INTEGER(smooth_age);
+  DATA_INTEGER(smooth_yob);
+  DATA_INTEGER(interval_censor);
+  DATA_IVECTOR(to_fit);
 
   // priors
   DATA_VECTOR(sd_beta);
@@ -46,87 +46,85 @@ Type objective_function<Type>::operator() ()
 
   // Skewness *
   PARAMETER(log_skew);
-	Type skew = 1.;
-	if (to_skew) {
-		prior -= dnorm(log_skew, skew_prior(0), skew_prior(1), true);
-		// Skewness real
-		/* a = exp(skew - 1.1*log_shape); */
-		skew = exp(log_skew);
-	}
+  Type skew = 1.;
+  if (to_skew) {
+    prior -= dnorm(log_skew, skew_prior(0), skew_prior(1), true);
+    skew = exp(log_skew);
+  }
 
   // yob rw2
-	PARAMETER 			 (beta_yob);
+  PARAMETER        (beta_yob);
   PARAMETER_VECTOR (yob_rw2);
   PARAMETER        (yob_phi);
 
-	if (yob_term) 
-	{
-		if (smooth_yob) {
+  if (yob_term) 
+  {
+    if (smooth_yob) {
       prior -= dnorm(log( (1 + yob_phi) / (1 - yob_phi)), Type(0), Type(0.15), true);
       AR1_t<N01<Type> > yob_ar1(yob_phi);
       prior -= yob_ar1(yob_rw2);
-		} else {
-			prior -= dnorm(beta_yob, sd_beta(0), sd_beta(1), true);
-		}
-	}
+    } else {
+      prior -= dnorm(beta_yob, sd_beta(0), sd_beta(1), true);
+    }
+  }
 
   // age rw2
-	PARAMETER 			 (beta_age);
+  PARAMETER        (beta_age);
   PARAMETER_VECTOR (age_rw2);
   PARAMETER        (age_phi);
 
-	if (age_term)
-	{
-		if (smooth_age) {
+  if (age_term)
+  {
+    if (smooth_age) {
       prior -= dnorm(log( (1 + age_phi) / (1 - age_phi)), Type(0), Type(0.15), true);
       AR1_t<N01<Type> > age_ar1(yob_phi);
       prior -= age_ar1(age_rw2);
-		} else {
-			prior -= dnorm(beta_age, sd_beta(0), sd_beta(1), true);
-		}
-	}
+    } else {
+      prior -= dnorm(beta_age, sd_beta(0), sd_beta(1), true);
+    }
+  }
 
   // Data likelihood
-	vector<Type> logliki(afs.size());
+  vector<Type> logliki(afs.size());
 
   for (int i = 0; i < afs.size(); i++) {
 
     Type eta = intercept;
 
-		if (yob_term) 
-		{
-			if (smooth_yob)
-				eta += yob_rw2(yob(i));
-			else
-				eta += beta_yob * yob(i);
-		}
+    if (yob_term) 
+    {
+      if (smooth_yob)
+        eta += yob_rw2(yob(i));
+      else
+        eta += beta_yob * yob(i);
+    }
 
-		if (age_term)
-		{
-			if (smooth_age)
-				eta += age_rw2(age(i));
-			else
-				eta += beta_age * age(i);
-		}
+    if (age_term)
+    {
+      if (smooth_age)
+        eta += age_rw2(age(i));
+      else
+        eta += beta_age * age(i);
+    }
 
     Type scale = exp(eta);
 
     if (event(i)) 
-		{
-			if (interval_censor)
-				logliki(i) = log( svw(i) * (
-							ktools::St_llogisI(afs_l(i), shape, scale, skew) - 
-							ktools::St_llogisI(afs_u(i), shape, scale, skew) ));
-			else
-				logliki(i) = log( svw(i) * ktools::ft_llogisI(afs(i), shape, scale, skew) );
+    {
+      if (interval_censor)
+        logliki(i) = log( svw(i) * (
+              ktools::St_llogisI(afs_l(i), shape, scale, skew) - 
+              ktools::St_llogisI(afs_u(i), shape, scale, skew) ));
+      else
+        logliki(i) = log( svw(i) * ktools::ft_llogisI(afs(i), shape, scale, skew) );
     } 
-		else {
+    else {
       logliki(i) = log(svw(i) * ktools::St_llogisI(afs(i), shape, scale, skew));
     }
-		if (to_fit(i))
-			dll -= logliki(i);
+    if (to_fit(i))
+      dll -= logliki(i);
   }
   dll += prior;
-	REPORT(logliki);
+  REPORT(logliki);
   return dll;
 }
