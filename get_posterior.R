@@ -3,8 +3,6 @@ get_posterior <- function(to_skew = 1,
                           age_term = 1,
                           smooth_age = 1,
                           smooth_yob = 1,
-                          age_order = 1,
-                          yob_order = 1,
                           weightv = "none",
                           interval_censor = 0,
                           data,
@@ -43,12 +41,8 @@ get_posterior <- function(to_skew = 1,
             sd_beta = c(0, 1),
             sd_yob = c(5e-1, 1e-1),
             sd_age = c(5e-1, 1e-1),
-            age_order = age_order,
-            yob_order = yob_order,
             shape_prior = c(0, 1),
-            skew_prior = c(0, 1),
-            R_age = INLA:::inla.rw(length(unique(fitdt$age)), 1, F, T),
-            R_yob = INLA:::inla.rw(length(unique(fitdt$yob)), 1, F, T)
+            skew_prior = c(0, 1)
         )
 
         # initial parameters
@@ -58,10 +52,10 @@ get_posterior <- function(to_skew = 1,
             log_skew = log(1),
             beta_yob = .01,
             yob_rw2 = rep(0, length(unique(fitdt$yob))),
-            log_yob_rw2_e = log(.1),
+            yob_phi = 0,
             beta_age = .01,
             age_rw2 = rep(0, length(unique(fitdt$age))),
-            log_age_rw2_e = log(.1)
+            age_phi = 0
         )
 
         # change this depending on model, fixed parameters that are not estimated
