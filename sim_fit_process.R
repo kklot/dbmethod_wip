@@ -23,8 +23,9 @@ params$bias <- file %>% gsub(pattern = ".*bias(.*?)_.*", replacement = "\\1")
 params$trend <- file %>% gsub(pattern = ".*trend(.*?)_.*", replacement = "\\1")
 params$theK <- file %>% gsub(pattern = ".*theK([0-9]{1,3}).*", replacement = "\\1") %>% as.numeric()
 
-## Pool population
+params
 
+## Pool population
 birth_cohorts <- 1940:2005
 wanted_cohort <- 1970:2005
 
