@@ -23,10 +23,6 @@ get_posterior <- function(to_skew = 1,
             mutate(take = id %in% sample(id, sample_size, prob = sampling_weight)) %>%
             filter(take) %>%
             select(svy, afs, biased_afs, age, event, yob, sv_weight)
-		
-		# Check if the age distribution is ok
-		# fitdt %>% ggplot(aes(age), alpha=.5) +
-			# geom_histogram() + facet_wrap(~svy)
 
         # all data and meta data
         idata <- list(
@@ -118,10 +114,6 @@ get_posterior <- function(to_skew = 1,
   
         fit <- nlminb(obj$par, obj$fn, obj$gr)
   
-        if (check) {
-            browser()
-        }
-
         if (svysmp == 1) {
             cat(head(names(fit$par), 10), "\n")
         }
@@ -133,6 +125,31 @@ get_posterior <- function(to_skew = 1,
         attributes(smp)$age <- sort(unique(fitdt$age))
         attributes(smp)$age_id <- grep("age_rw2$", colnames(smp))
         attributes(smp)$yob_id <- grep("yob_rw2$", colnames(smp))
+        
+        if (check) {
+            browser()
+            # Check if the age distribution is ok
+            fitdt %>% ggplot(aes(age), alpha = .5) +
+                geom_histogram() +
+                facet_wrap(~svy)
+                        
+            scale_i <- smp[1, "intercept"] +
+                smp[1, attributes(smp)$yob_id] +
+                smp[1, attributes(smp)$age_id[20]]            
+            med_i <- qskewlogis(
+                .5, scale_i %>% exp(),
+                smp[1, "log_shape"] %>% exp(),
+                smp[1, "log_skew"] %>% exp()
+            )
+            est_i <- tibble(yob=attributes(smp)$yob, med=med_i)            
+            fitdt %>%
+                ggplot() +
+                # geom_point(aes(yob, afs, color = factor(svy), alpha = factor(sv_weight)), se = F) +
+                geom_smooth(aes(yob, afs, color = factor(svy)), se = F) +
+                geom_line(aes(yob, median), lwd = 2, pdata) +
+                geom_line(aes(yob, med), est_i, col = "red") +
+                geom_vline(xintercept = c(1970, 2005))
+        }
 
         smp
     } # end a sample
