@@ -2,8 +2,8 @@ library(abind)
 library(TMB)
 library(data.table)
 library(tidyverse)
-# remotes::install_github('kklot/ktools')
 library(ktools)
+library(loo)
 
 set.seed(123)
 options(mc.cores = parallel::detectCores()-2)
@@ -52,7 +52,6 @@ sz = data.frame(
 sz %>% {approxfun(.[,1], .[,2]/sum(.[,2]), yleft=0, yright=0)} -> age_weight
 
 my_pop <- data.table(id  = 1:N, yob = sample(birth_cohorts, N, T), afs=0)
-```
 
 # choose survey year 5 year apart starting backward from 2020
 # maximum 7
