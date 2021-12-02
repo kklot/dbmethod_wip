@@ -20,8 +20,8 @@ params <- c()
 params$nsv <- file %>% gsub(pattern = ".*nsv([0-9]{1})_.*", replacement = "\\1") %>% as.numeric()
 params$sample_size <- file %>% gsub(pattern = ".*sample_size([0-9]{4})_.*", replacement = "\\1") %>% as.numeric()
 params$bias <- file %>% gsub(pattern = ".*bias(.*?)_.*", replacement = "\\1")
-params$trend <- file %>% gsub(pattern = ".*trend(.*?).rds", replacement = "\\1")
-params$theK <- file %>% gsub(pattern = ".*K([0-9]{1,3})_.*", replacement = "\\1") %>% as.numeric()
+params$trend <- file %>% gsub(pattern = ".*trend(.*?)_.*", replacement = "\\1")
+params$theK <- file %>% gsub(pattern = ".*theK([0-9]{1,3}).*", replacement = "\\1") %>% as.numeric()
 
 ## Pool population
 
