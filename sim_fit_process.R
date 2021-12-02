@@ -6,6 +6,8 @@ library(data.table)
 library(tidyverse)
 library(ktools)
 
+options("mc.cores" = parallel::detectCores()-2)
+
 set.seed(123)
 # short hand
 X = attributes
@@ -104,7 +106,7 @@ stats = function(x, agref = 1) {
 # parallel::detectCores()
 # apply to the number of survey sample of a scenario
 getstats = function(aref) {
-    parallel::mclapply(post, stats, agref = aref, mc.cores = 40) %>%
+    parallel::mclapply(post, stats, agref = aref) %>%
         bind_rows(.id = "sample") %>%
         mutate(
             ageref = aref, nsv = params$nsv, size = params$sample_size,
