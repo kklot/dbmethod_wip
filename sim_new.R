@@ -11,15 +11,15 @@ options(mc.cores = parallel::detectCores()-2)
 # cluster stuffs
 task_id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 base_dir <- "/scratch/fuchs/fias/knguyen/"
-save_to  <- paste0(base_dir, "db_mt_fix_weight/")
+save_to  <- paste0(base_dir, "db_mt_fix_weight_smoother/")
 dir.create(save_to, FALSE)
 
 scenarios <- crossing(
     nsv = 2:7,
     sample_size = 1000,
     bias = char(none, logis),
-    trend=char(increase, none, decrease),
-    theK=100
+    trend = char(increase, none, decrease),
+    theK = 100
 )
 
 params <- as.list(scenarios[task_id, ])
