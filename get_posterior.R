@@ -9,7 +9,7 @@ get_posterior <- function(to_skew = 1,
                           interval_censor = 0,
                           data,
                           sample_size,
-                          K = 1000, S = 1000, verbose = F, check = F) {
+                          K = 1000, S = 100, verbose = F, check = F) {
 
     if (weightv == "none")
         data$sv_weight = 1
