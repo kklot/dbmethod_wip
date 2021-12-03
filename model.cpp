@@ -67,6 +67,9 @@ Type objective_function<Type>::operator() ()
   prior -= dnorm(log( (1 + yob_phi(0)) / (1 - yob_phi(0))), Type(0), Type(1), true);
   prior -= dnorm(log( (1 + yob_phi(1)) / (1 - yob_phi(1))), Type(0), Type(1), true);
   prior += density::SCALE(yob_ar2, ar_scale_sd)(yob_rw2);
+  SIMULATE {
+    density::SCALE(density::ARk(yob_phi), ar_scale_sd).simulate(yob_rw2);
+  }
 
   // age rw2
   PARAMETER_VECTOR (age_rw2);
@@ -76,31 +79,35 @@ Type objective_function<Type>::operator() ()
 
   prior -= dnorm(log( (1 + age_phi) / (1 - age_phi)), Type(0), Type(1), true);
   prior += age_ar1(age_rw2);
+  SIMULATE {
+    density::AR1(age_phi).simulate(age_rw2);
+  }
 
   // Data likelihood
-  for (int i = 0; i < afs.size(); i++) {
+  vector<Type> predicted(afs.size()), scale(afs.size());
+  for (int i = 0; i < afs.size(); i++)
+  {
     Type eta = intercept + yob_rw2(yob(i)) + age_rw2(age(i));
-    Type scale = exp(eta);
+    scale(i) = exp(eta);
     if (event(i)) {
-      dll -= log(ktools::ft_llogisI(afs(i), shape, scale, skew));
+      dll -= log(ktools::ft_llogisI(afs(i), shape, scale(i), skew));
     } else {
-      dll -= log(ktools::St_llogisI(afs(i), shape, scale, skew));
+      dll -= log(ktools::St_llogisI(afs(i), shape, scale(i), skew));
+    }
+    SIMULATE {
+      predicted(i) = rskewlogis(scale(i), shape, skew);
     }
   }
 
   dll += prior;
 
   SIMULATE {
-    density::ARk(yob_phi).simulate(yob_rw2);
-    density::AR1(age_phi).simulate(age_rw2);
-    vector<Type> eta(afs.size());
-    for (int i = 0; i < afs.size(); i++)
-    {
-      eta(i) = intercept + yob_rw2(yob(i)) + age_rw2(age(i));
-    }
-    vector<Type> scale = exp(eta);
-    vector<Type> y = rskewlogis(scale, shape, skew);
-    REPORT(y);
+    REPORT(scale);
+    REPORT(predicted);
+    REPORT(yob_rw2);
+    REPORT(age_rw2);
+    REPORT(skew);
+    REPORT(shape);
   }
   return dll;
 }
