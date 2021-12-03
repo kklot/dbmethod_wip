@@ -14,6 +14,15 @@ vector<Type> rskewlogis (vector<Type> scale, Type shape, Type skew) {
 }
 
 template<class Type>
+Type rskewlogis (Type scale, Type shape, Type skew) {
+  Type u = runif(0., 1.);
+  Type t1 = pow(u, -Type(1.) / skew) - Type(1.);
+  Type t2 = pow(t1, -Type(1.) / shape);
+  Type o = Type(1.) / scale * t2;
+  return o;
+}
+
+template<class Type>
 Type objective_function<Type>::operator() ()
 {
   parallel_accumulator<Type> dll(this);
