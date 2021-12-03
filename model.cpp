@@ -2,6 +2,18 @@
 #include "ktools.hpp"
 
 template<class Type>
+vector<Type> rskewlogis (vector<Type> scale, Type shape, Type skew) {
+  vector<Type> u_l(scale.size()), u_u(scale.size());
+  u_l.fill(0.);
+  u_u.fill(1.);
+  vector<Type> u = runif(u_l, u_u);
+  vector<Type> t1 = pow(u, -Type(1.) / skew) - Type(1.);
+  vector<Type> t2 = pow(t1, -Type(1.) / shape);
+  vector<Type> o = Type(1.) / scale *t2;
+  return o;
+}
+
+template<class Type>
 Type objective_function<Type>::operator() ()
 {
   parallel_accumulator<Type> dll(this);
@@ -69,6 +81,17 @@ Type objective_function<Type>::operator() ()
 
   dll += prior;
 
-
+  SIMULATE {
+    density::ARk(yob_phi).simulate(yob_rw2);
+    density::AR1(age_phi).simulate(age_rw2);
+    vector<Type> eta(afs.size());
+    for (int i = 0; i < afs.size(); i++)
+    {
+      eta(i) = intercept + yob_rw2(yob(i)) + age_rw2(age(i));
+    }
+    vector<Type> scale = exp(eta);
+    vector<Type> y = rskewlogis(scale, shape, skew);
+    REPORT(y);
+  }
   return dll;
 }
