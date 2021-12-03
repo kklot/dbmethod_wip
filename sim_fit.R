@@ -68,14 +68,6 @@ chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
 
 chosen_svy
 
-# Load dll
-# we do multiple fit on parallel so avoiding using it in TMB
-openmp(1)
-compile("model.cpp")
-dyn.load(dynlib("model"))
-invisible(config(tape.parallel=FALSE, DLL='model'))
-source("tmb_sampling.R")
-
 # AFS parameters and sampling
 # Following skew log-logistic distribution, at the begining, year 1900
 ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
@@ -135,13 +127,21 @@ afsd <- afsd %>%
 # Fit model
 source("get_posterior.R")
  
+# Load dll
+# we do multiple fit on parallel so avoiding using it in TMB
+openmp(1)
+options(mc.cores=1)
+compile("model.cpp")
+dyn.load(dynlib("model"))
+invisible(config(tape.parallel = FALSE, DLL = "model"))
+source("tmb_sampling.R")
+
 # parallel within this
 post = get_posterior(
     data = afsd, 
     sample_size = params$sample_size, 
     K = params$theK, 
-    S = 50, 
-    ar_scale = 1
+    S = 50
 )
 
 attributes(post)$ref_par = ref 
