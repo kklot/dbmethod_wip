@@ -55,15 +55,17 @@ Type objective_function<Type>::operator() ()
   // yob rw2
   PARAMETER        (beta_yob);
   PARAMETER_VECTOR (yob_rw2);
-  PARAMETER        (yob_phi);
+  PARAMETER_VECTOR (yob_phi);
+  DATA_SCALAR(ar_scale);
 
-  density::AR1_t<density::N01<Type> > yob_ar1 = density::AR1(yob_phi);
+  density::ARk_t<Type> yob_ar2 = density::ARk(yob_phi);
 
-  if (yob_term) 
+  if (yob_term)
   {
     if (smooth_yob) {
-      prior -= dnorm(log( (1 + yob_phi) / (1 - yob_phi)), Type(0), Type(0.15), true);
-      prior += yob_ar1(yob_rw2);
+      prior -= dnorm(log( (1 + yob_phi(0)) / (1 - yob_phi(0))), Type(0), Type(1), true);
+      prior -= dnorm(log( (1 + yob_phi(1)) / (1 - yob_phi(1))), Type(0), Type(1), true);
+      prior += density::SCALE(yob_ar2, ar_scale)(yob_rw2);
     } else {
       prior -= dnorm(beta_yob, sd_beta(0), sd_beta(1), true);
     }
@@ -79,7 +81,7 @@ Type objective_function<Type>::operator() ()
   if (age_term)
   {
     if (smooth_age) {
-      prior -= dnorm(log( (1 + age_phi) / (1 - age_phi)), Type(0), Type(0.15), true);
+      prior -= dnorm(log( (1 + age_phi) / (1 - age_phi)), Type(0), Type(1), true);
       prior += age_ar1(age_rw2);
     } else {
       prior -= dnorm(beta_age, sd_beta(0), sd_beta(1), true);

@@ -124,22 +124,24 @@ afsd <- afsd %>%
         age = svy - yob
     ) %>%
     filter(age %in% 15:49) %>%
-        mutate(
-            bias = bias_f(age) + rnorm(n(), 0, 0.3),
-            biased_afs = afs + bias,
-            sampling_weight = age_weight(age),
-            event = if_else(biased_afs <= age, 1, 0),
-            biased_afs = if_else(event == 0, age, biased_afs)
-        )
+    mutate(
+        bias = bias_f(age) + rnorm(n(), 0, 0.3),
+        biased_afs = afs + bias,
+        sampling_weight = age_weight(age),
+        event = if_else(biased_afs <= age, 1, 0),
+        biased_afs = if_else(event == 0, as.double(age), biased_afs)
+    )
 
 # Fit model
 source("get_posterior.R")
  
 # parallel within this
 post = get_posterior(
-    data = afsd, sample_size = params$sample_size, K = params$theK, S = 50,
-    check = T, 
-    yob_order = 2
+    data = afsd, 
+    sample_size = params$sample_size, 
+    K = params$theK, 
+    S = 50, 
+    ar_scale = 1
 )
 
 attributes(post)$ref_par = ref 

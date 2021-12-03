@@ -5,6 +5,7 @@ get_posterior <- function(to_skew = 1,
                           smooth_yob = 1,
                           weightv = "none",
                           interval_censor = 0,
+                          ar_scale = .1,
                           data,
                           sample_size,
                           K = 1000, S = 100, verbose = F, check = F) {
@@ -42,7 +43,8 @@ get_posterior <- function(to_skew = 1,
             sd_yob = c(5e-1, 1e-1),
             sd_age = c(5e-1, 1e-1),
             shape_prior = c(0, 1),
-            skew_prior = c(0, 1)
+            skew_prior = c(0, 1),
+            ar_scale = ar_scale
         )
 
         # initial parameters
@@ -52,7 +54,7 @@ get_posterior <- function(to_skew = 1,
             log_skew = log(1),
             beta_yob = .01,
             yob_rw2 = rep(0, length(unique(fitdt$yob))),
-            yob_phi = 0,
+            yob_phi = rep(0, 2), # AR2
             beta_age = .01,
             age_rw2 = rep(0, length(unique(fitdt$age))),
             age_phi = 0
@@ -126,7 +128,6 @@ get_posterior <- function(to_skew = 1,
             fitdt %>% ggplot(aes(age), alpha = .5) +
                 geom_histogram() +
                 facet_wrap(~svy)
-                        
             scale_i <- smp[1, "intercept"] +
                 smp[1, attributes(smp)$yob_id] +
                 smp[1, attributes(smp)$age_id[20]]            
