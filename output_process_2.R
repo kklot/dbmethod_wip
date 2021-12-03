@@ -1,66 +1,101 @@
 library(ktools)
 library(tidyverse)
 library(data.table)
-birth_cohorts <- 1900:2021
-elig_age      <- 15:49 # age eligible for including in the year of surveys
-ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
-qskewlogis(.5, ref$scale, ref$shape, ref$skew) 
-min_scale = 0.0703  # 15
-qskewlogis(.5, min_scale, ref$shape, ref$skew) 
-max_scale = 0.05859 # 18
-qskewlogis(.5, max_scale, ref$shape, ref$skew) 
+newpal = c("#EC768C", "#F6D3D9", "#DCF4EA", "#DAF1F9", "#B8D6B4", "#95DEC1", "#8DD5EB", "#FAE29B", "#CCCAA1", "#DACF9B", "#E3DEB7", "#E8EFCF")
+options(
+    ggplot2.discrete.fill = hcl.colors(8),
+    ggplot2.discrete.color = hcl.colors(8)
+)
 
-refnone = tibble(yob = birth_cohorts, scale = ref$scale, skew = ref$skew, shape = ref$shape)
-scalev = seq(min_scale, max_scale, length.out = length(birth_cohorts))
-refincrease = tibble(yob = birth_cohorts, scale = scalev, skew = ref$skew, shape = ref$shape)
-scalev = seq(max_scale, min_scale, length.out = length(birth_cohorts))
-refdecrease  = tibble(yob = birth_cohorts, scale = scalev, skew = ref$skew, shape = ref$shape)
+setwd("/Users/knguyen/GitHub/db_paper 2/simulation_study/")
 
-X = attributes
-ekld = function(x) x %>% aperm(c(1,3,2)) %>% rowMeans(dims = 2) %>% colSums %>% mean
+real_diff_1970_2005 <- tibble(
+    trend = char(none, increase, decrease),
+    real_diff = c(0, 2.34358, -1.891448)
+)
 
-toatable = function(x) 
-{
-	readRDS(x) %>% 
-		lapply(t) %>% 
-		lapply(as.data.table, keep.rownames=1) %>% 
-		list(.id = "age_ref") %>% 
-		do.call("bind_rows", .)
-}
+processed <- lapply(list.files("fuchs7", full.names = T), readRDS) %>%
+    bind_rows(.id = "scenario") %>%
+    mutate(
+        ageref = factor(ageref, 1:4, c("15-19", "20-24", "25-29", "30-34")),
+        nsv = factor(nsv)
+    ) %>%
+    left_join(real_diff_1970_2005, "trend") %>%
+    mutate(
+        trend = paste0("Imposed trend: ", trend),
+        bias = paste0("Imposed bias: ", bias)
+    )
+    
+processed %>%
+    ggplot() +
+    geom_boxplot(aes(ageref, ave_trend, fill = nsv)) +
+    geom_hline(aes(yintercept = real_diff), linetype = "dashed") +
+    facet_grid(vars(bias), vars(trend),scales = 'free') +
+    theme_bw() +
+    theme(legend.position = "bottom", strip.background = element_rect(fill = "grey95", color = "grey")) +
+    guides(fill = guide_legend(nrow = 1)) +
+    scale_fill_viridis_d() +
+    # scale_y_continuous(breaks = seq(-2, 5.5, 1)) +
+    labs(
+        x = "Referenced age-group", y = "Differences", fill = "Number of surveys",
+        title = "Differences in median AFS between 1970-2005 birth cohorts"
+    ) -> g
 
-os = list.files("fuchs", '.*rds$', full.names=T) %>%
-	lapply(toatable) %>% 
-	do.call("bind_rows", .) %>% 
-	mutate(across(age_ref:size, as.double)) %>% 
-	mutate(age_ref = factor(age_ref, 1:4, c('15-19', '20-24', '25-29', '30-34')))
+quartz_off(g, "trend_diff", 7, 7, open = 1)
 
-osw = os %>% 
-	rename(shape_cov = ishape, scale_cov = iscale, skew_cov = iskew) %>% 
-	pivot_longer(2:7, names_to = char(par, stat), names_sep = "_") %>% 
-	mutate(par = str_to_title(par))  
+g_last_diff <- processed %>%
+    ggplot() +
+    geom_boxplot(aes(ageref, ave_last, fill = nsv)) +
+    geom_hline(aes(yintercept = 0), linetype = "dashed") +
+    facet_grid(vars(bias), vars(trend)) +
+    theme_bw() +
+    theme(legend.position = "bottom", strip.background = element_rect(fill = "grey95", color = "grey")) +
+    guides(fill = guide_legend(nrow = 1)) +
+    scale_y_continuous(breaks = seq(-2, 5.5, 1)) +
+    scale_fill_viridis_d() +
+    labs(
+        x = "Referenced age-group", y = "Differences",
+        title = "Differences in median AFS of the 2005 birth cohort", 
+		fill = "Number of surveys"
+    )
 
-newpal = c('#EC768C', '#F6D3D9', '#DCF4EA', '#DAF1F9', '#B8D6B4', '#95DEC1',
-					 '#8DD5EB', '#FAE29B', '#CCCAA1', '#DACF9B', '#E3DEB7', '#E8EFCF')
+quartz_off(g_last_diff, "last_diff", 7, 7, open = 1)
 
-library(ktools)
-options(ggplot2.discrete.fill =  hcl.colors(8), 
-				ggplot2.discrete.color = hcl.colors(8))
+processed %>%
+    group_by(ageref, trend, bias, nsv) %>%
+    summarise(cov_95 = mean(cov_95), cov_iqr = mean(cov_iqr)) %>%
+    ggplot() +
+    geom_line(aes(ageref, cov_95, color = nsv, group = nsv)) +
+    facet_grid(vars(bias), vars(trend)) +
+    theme_bw() +
+    theme(legend.position = "bottom", strip.background = element_rect(fill = "grey95", color = "grey")) +
+    guides(color = guide_legend(nrow = 1)) +
+    scale_fill_viridis_d() +
+	scale_y_continuous(labels = scales::percent) +
+    labs(
+        x = "Referenced age-group", y = "Coverage",
+        subtitle = "Percentage of simulation included the true trend difference in 95% CrI", 
+		color = "Number of surveys"
+    ) -> g_cov
+quartz_off(g_cov, "cov_diff", 7, 5, open = 1)
 
-
-g = os %>% 
-	rename(KLD = V7) %>%
-	mutate(nsv = paste0('Number of surveys = ', nsv)) %>% 
-	mutate(size = paste0('Sample size/survey = ', size)) %>% 
-	ggplot() +
-	geom_line(aes(age_ref, KLD, color = trend, linetype = bias, group = interaction(trend, bias))) +
-	geom_point(aes(age_ref, KLD, color = trend, linetype = bias, group = interaction(trend, bias))) +
-	facet_wrap(char(nsv, size)) + labs(x = "Age's effect reference group") +
-	scale_y_continuous(trans = 'log', labels = function(x) sprintf("%.2f",x)) +
-	theme(legend.position = 'bottom', legend.spacing.x = unit(.01, "cm"),
-				strip.background = element_rect(fill='grey95', color = NA)) +
-	coord_cartesian(xlim=c(0.9, 4.2), expand=FALSE, clip = "off")
-
-quartz_off(g, 'fig/KLD', 7, 7)
+processed %>%
+    group_by(ageref, trend, bias, nsv) %>%
+    summarise(cov_95 = mean(cov_95), cov_iqr = mean(cov_iqr)) %>%
+    ggplot() +
+    geom_line(aes(ageref, cov_iqr, color = nsv, group = nsv)) +
+    facet_grid(vars(bias), vars(trend)) +
+    theme_bw() +
+    theme(legend.position = "bottom", strip.background = element_rect(fill = "grey95", color = "grey")) +
+    guides(color = guide_legend(nrow = 1)) +
+    scale_fill_viridis_d() +
+	scale_y_continuous(labels = scales::percent) +
+    labs(
+        x = "Referenced age-group", y = "Coverage",
+        subtitle = "Percentage of simulation included the true trend difference in IQR estimate", 
+		color = "Number of surveys"
+    ) -> g_cov
+quartz_off(g_cov, "cov_diff_iqr", 7, 5, open = 1)
 
 library(ggpubr)
 
