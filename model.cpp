@@ -74,7 +74,7 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR (age_rw2);
   PARAMETER        (age_phi);
 
-  density::AR1_t<density::N01<Type> > age_ar1 = density::AR1(yob_phi);
+  density::AR1_t<density::N01<Type> > age_ar1 = density::AR1(age_phi);
 
   if (age_term)
   {
