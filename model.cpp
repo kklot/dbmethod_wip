@@ -63,7 +63,7 @@ Type objective_function<Type>::operator() ()
   {
     if (smooth_yob) {
       prior -= dnorm(log( (1 + yob_phi) / (1 - yob_phi)), Type(0), Type(0.15), true);
-      prior -= yob_ar1(yob_rw2);
+      prior += yob_ar1(yob_rw2);
     } else {
       prior -= dnorm(beta_yob, sd_beta(0), sd_beta(1), true);
     }
@@ -80,7 +80,7 @@ Type objective_function<Type>::operator() ()
   {
     if (smooth_age) {
       prior -= dnorm(log( (1 + age_phi) / (1 - age_phi)), Type(0), Type(0.15), true);
-      prior -= age_ar1(age_rw2);
+      prior += age_ar1(age_rw2);
     } else {
       prior -= dnorm(beta_age, sd_beta(0), sd_beta(1), true);
     }
