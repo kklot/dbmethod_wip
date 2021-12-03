@@ -66,22 +66,22 @@ get_posterior <- function(to_skew = 1,
         }
 
         if (!yob_term) {
-            which_ones <- c(which_ones, char(beta_yob, yob_rw2, log_yob_rw2_e))
+            which_ones <- c(which_ones, char(beta_yob, yob_rw2, yob_phi))
         } else {
             if (smooth_yob) {
                 which_ones <- c(which_ones, "beta_yob")
             } else {
-                which_ones <- c(which_ones, char(yob_rw2, log_yob_rw2_e))
+                which_ones <- c(which_ones, char(yob_rw2, yob_phi))
             }
         }
 
         if (!age_term) {
-            which_ones <- c(which_ones, char(beta_age, age_rw2, log_age_rw2_e))
+            which_ones <- c(which_ones, char(beta_age, age_rw2, age_phi))
         } else {
             if (smooth_age) {
                 which_ones <- c(which_ones, "beta_age")
             } else {
-                which_ones <- c(which_ones, char(age_rw2, log_age_rw2_e))
+                which_ones <- c(which_ones, char(age_rw2, age_phi))
             }
         }
 
