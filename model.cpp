@@ -39,26 +39,30 @@ Type objective_function<Type>::operator() ()
   prior -= dnorm(log( (1 + yob_phi(0)) / (1 - yob_phi(0))), Type(0), Type(1), true);
   prior -= dnorm(log( (1 + yob_phi(1)) / (1 - yob_phi(1))), Type(0), Type(1), true);
 
-  PARAMETER(log_ar_precision);
-  prior -= dgamma(exp(log_ar_precision), Type(1), Type(1./1e-5), true) + log_ar_precision;
-  Type ar_scale_sd = pow(1 / exp(log_ar_precision), 0.5);
+  PARAMETER(log_ar_precision_yob);
+  prior -= dgamma(exp(log_ar_precision_yob), Type(1), Type(1./1e-5), true) + log_ar_precision_yob;
+  Type ar_scale_sd_yob = pow(1 / exp(log_ar_precision_yob), 0.5);
 
   density::ARk_t<Type> yob_ar2 = density::ARk(yob_phi);
-  prior += density::SCALE(yob_ar2, ar_scale_sd)(yob_rw2);
+  prior += density::SCALE(yob_ar2, ar_scale_sd_yob)(yob_rw2);
   SIMULATE {
-    density::SCALE(density::ARk(yob_phi), ar_scale_sd).simulate(yob_rw2);
+    density::SCALE(yob_ar2, ar_scale_sd_yob).simulate(yob_rw2);
   }
 
   // age rw2
   PARAMETER_VECTOR (age_rw2);
-  PARAMETER        (age_phi);
+  PARAMETER_VECTOR (age_phi);
+  prior -= dnorm(log( (1 + age_phi(0)) / (1 - age_phi(0))), Type(0), Type(1), true);
+  prior -= dnorm(log( (1 + age_phi(1)) / (1 - age_phi(1))), Type(0), Type(1), true);
+ 
+  PARAMETER(log_ar_precision_age);
+  prior -= dgamma(exp(log_ar_precision_age), Type(1), Type(1./1e-5), true) + log_ar_precision_age;
+  Type ar_scale_sd_age = pow(1 / exp(log_ar_precision_age), 0.5);
 
-  density::AR1_t<density::N01<Type> > age_ar1 = density::AR1(age_phi);
-
-  prior -= dnorm(log( (1 + age_phi) / (1 - age_phi)), Type(0), Type(1), true);
-  prior += age_ar1(age_rw2);
+  density::ARk_t<Type> age_ar2 = density::ARk(age_phi);
+  prior += density::SCALE(age_ar2, ar_scale_sd_age)(age_rw2);
   SIMULATE {
-    density::AR1(age_phi).simulate(age_rw2);
+    density::SCALE(age_ar2, ar_scale_sd_age).simulate(age_rw2);
   }
 
   // Data likelihood

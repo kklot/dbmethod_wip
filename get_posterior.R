@@ -44,8 +44,9 @@ get_posterior <- function(to_skew = 1,
             yob_rw2 = rep(0, length(unique(fitdt$yob))),
             yob_phi = rep(0, 2), # AR2
             age_rw2 = rep(0, length(unique(fitdt$age))),
-            age_phi = 0,
-            log_ar_precision = log(1)
+            age_phi = rep(0, 2),
+            log_ar_precision_yob = log(1e3),
+            log_ar_precision_age = log(1e3)
         )
 
         # model configs
@@ -54,7 +55,8 @@ get_posterior <- function(to_skew = 1,
         
         obj <- MakeADFun(
             data = idata, parameters = parameters,
-            random = char(intercept, log_shape, log_skew, yob_rw2, age_rw2, age_phi, yob_phi),
+            random = char(yob_rw2, age_rw2),
+            # random = char(intercept, log_shape, log_skew, yob_rw2, age_rw2, age_phi, yob_phi),
             silent = !verbose, DLL = "model"
         )
 
