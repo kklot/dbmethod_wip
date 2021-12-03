@@ -36,13 +36,16 @@ Type objective_function<Type>::operator() ()
   // yob rw2
   PARAMETER_VECTOR (yob_rw2);
   PARAMETER_VECTOR (yob_phi);
-  DATA_SCALAR(ar_scale);
+
+  PARAMETER(log_ar_precision);
+  prior -= dgamma(exp(log_ar_precision), Type(1), Type(1./1e-5), true) + log_ar_precision;
+  Type ar_scale_sd = pow(1 / exp(log_ar_precision), 0.5);
 
   density::ARk_t<Type> yob_ar2 = density::ARk(yob_phi);
 
   prior -= dnorm(log( (1 + yob_phi(0)) / (1 - yob_phi(0))), Type(0), Type(1), true);
   prior -= dnorm(log( (1 + yob_phi(1)) / (1 - yob_phi(1))), Type(0), Type(1), true);
-  prior += density::SCALE(yob_ar2, ar_scale)(yob_rw2);
+  prior += density::SCALE(yob_ar2, ar_scale_sd)(yob_rw2);
 
   // age rw2
   PARAMETER_VECTOR (age_rw2);
