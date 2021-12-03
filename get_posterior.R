@@ -26,25 +26,14 @@ get_posterior <- function(to_skew = 1,
         # all data and meta data
         idata <- list(
             afs = fitdt$biased_afs,
-            afs_u = fitdt$biased_afs + 1,
-            afs_l = fitdt$biased_afs,
             age = fitdt$age - min(fitdt$age),
             event = fitdt$event,
             yob = fitdt$yob - min(fitdt$yob),
-            svw = fitdt$sv_weight,
-            to_skew = to_skew,
-            age_term = age_term,
-            smooth_age = smooth_age,
-            yob_term = yob_term,
-            smooth_yob = smooth_yob,
-            interval_censor = 0,
-            to_fit = rep(1, nrow(fitdt)),
             sd_beta = c(0, 1),
             sd_yob = c(5e-1, 1e-1),
             sd_age = c(5e-1, 1e-1),
             shape_prior = c(0, 1),
-            skew_prior = c(0, 1),
-            ar_scale = ar_scale
+            skew_prior = c(0, 1)
         )
 
         # initial parameters
@@ -52,70 +41,27 @@ get_posterior <- function(to_skew = 1,
             intercept = -3,
             log_shape = log(10),
             log_skew = log(1),
-            beta_yob = .01,
             yob_rw2 = rep(0, length(unique(fitdt$yob))),
             yob_phi = rep(0, 2), # AR2
-            beta_age = .01,
             age_rw2 = rep(0, length(unique(fitdt$age))),
-            age_phi = 0
+            age_phi = 0,
+            log_ar_precision = log(1)
         )
 
-        # change this depending on model, fixed parameters that are not estimated
-        which_ones <- NULL
-
-        if (!to_skew) {
-            which_ones <- c(which_ones, "log_skew")
-        }
-
-        if (!yob_term) {
-            which_ones <- c(which_ones, char(beta_yob, yob_rw2, yob_phi))
-        } else {
-            if (smooth_yob) {
-                which_ones <- c(which_ones, "beta_yob")
-            } else {
-                which_ones <- c(which_ones, char(yob_rw2, yob_phi))
-            }
-        }
-
-        if (!age_term) {
-            which_ones <- c(which_ones, char(beta_age, age_rw2, age_phi))
-        } else {
-            if (smooth_age) {
-                which_ones <- c(which_ones, "beta_age")
-            } else {
-                which_ones <- c(which_ones, char(age_rw2, age_phi))
-            }
-        }
-
-        # set random effect
-        re <- NULL
-        fe_only <- TRUE
-        re_only <- FALSE
-        if (smooth_age | smooth_yob) {
-            # there is case smoothing one of the two
-            re <- char(intercept, log_shape, log_skew, beta_yob, beta_age, yob_rw2, age_rw2)
-            fe_only <- FALSE
-            re_only <- TRUE
-        }
-
         # model configs
-        openmp(1)
+        invisible(suppressWarnings(openmp(1)))
         options(tape.parallel = FALSE, DLL = "model")
         
         obj <- MakeADFun(
             data = idata, parameters = parameters,
-            random = re, map = tmb_fixit(parameters, which_ones),
+            random = char(intercept, log_shape, log_skew, yob_rw2, age_rw2, age_phi, yob_phi),
             silent = !verbose, DLL = "model"
         )
-  
+
         fit <- nlminb(obj$par, obj$fn, obj$gr)
-  
-        if (svysmp == 1) {
-            cat(head(names(fit$par), 10), "\n")
-        }
 
         # sample posterior samples
-        smp <- sample_tmb(list(obj = obj, fit = fit), S, fe_only, re_only)
+        smp <- sample_tmb(list(obj = obj, fit = fit), S, FALSE, TRUE)
 
         attributes(smp)$yob <- sort(unique(fitdt$yob))
         attributes(smp)$age <- sort(unique(fitdt$age))
@@ -128,6 +74,10 @@ get_posterior <- function(to_skew = 1,
             fitdt %>% ggplot(aes(age), alpha = .5) +
                 geom_histogram() +
                 facet_wrap(~svy)
+
+            sml <- obj$simulate(, 1)
+            sml$y2 <- sapply(1:length(sml$scale), \(x) rskewlogis(1, sml$scale[x], sml$shape, sml$skew))
+
             scale_i <- smp[1, "intercept"] +
                 smp[1, attributes(smp)$yob_id] +
                 smp[1, attributes(smp)$age_id[20]]            
@@ -137,13 +87,31 @@ get_posterior <- function(to_skew = 1,
                 smp[1, "log_skew"] %>% exp()
             )
             est_i <- tibble(yob = attributes(smp)$yob, med = med_i)
-            fitdt %>%
+            est_i %>% filter(yob %in% range(wanted_cohort))            
+            fitdt %>% bind_cols(y=sml$y2) %>%
+                group_by(svy, yob) %>%
+                summarise(afs = median(afs), y = median(y)) %>%
                 ggplot() +
-                # geom_point(aes(yob, afs, color = factor(svy), alpha = factor(sv_weight)), se = F) +
-                geom_smooth(aes(yob, afs, color = factor(svy)), se = F) +
-                geom_line(aes(yob, median), lwd = 2, pdata) +
-                geom_line(aes(yob, med), est_i, col = "red") +
-                geom_vline(xintercept = c(1970, 2005))
+                geom_rect(aes(xmin = 1970, xmax = 2005, ymin = -Inf, ymax = Inf), fill = "#f0e5d9", alpha = .1) +
+                geom_smooth(aes(yob, afs, color = factor(svy)), lwd = .7, se = F) +
+                geom_line(aes(yob, y, color = factor(svy)), lty="dashed", lwd = .7) +
+                geom_line(aes(yob, median, color="True"), lwd = 2, alpha=.7, pdata %>% filter(yob %in% wanted_cohort)) +
+                geom_line(aes(yob, med, color="Fitted AR2"), est_i) +
+                scale_color_manual(values = gen_colors(n = 9)) +
+                labs(title = "AR(2)") -> g            
+            ggsave("AR2xxx.pdf", g, width = 7, height = 7)            
+            open_file("AR2xxx.pdf")
+
+            tibble(yhat = sml$y2, y = sml$afs, event = sml$event) %>%
+                ggplot() +
+                geom_point(aes(y, yhat)) +
+                facet_wrap(~event)
+
+            put(2, 2)
+            plotp(sml$yob_rw2)
+            plotp(smp[1, attributes(smp)$yob_id])
+            plotp(sml$age_rw2)
+            plotp(smp[1, attributes(smp)$age_id])
         }
 
         smp
