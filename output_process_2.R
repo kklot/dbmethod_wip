@@ -1,7 +1,9 @@
 library(ktools)
 library(tidyverse)
 library(data.table)
+
 newpal = c("#EC768C", "#F6D3D9", "#DCF4EA", "#DAF1F9", "#B8D6B4", "#95DEC1", "#8DD5EB", "#FAE29B", "#CCCAA1", "#DACF9B", "#E3DEB7", "#E8EFCF")
+
 options(
     ggplot2.discrete.fill = hcl.colors(8),
     ggplot2.discrete.color = hcl.colors(8)
@@ -11,7 +13,7 @@ setwd("/Users/knguyen/GitHub/db_paper 2/simulation_study/")
 
 real_diff_1970_2005 <- tibble(
     trend = char(none, increase, decrease),
-    real_diff = c(0, 2.34358, -1.891448)
+    real_diff = c(0, 2.38565, -1.917808)
 )
 
 processed <- lapply(list.files("fuchs7", full.names = T), readRDS) %>%

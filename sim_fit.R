@@ -11,7 +11,7 @@ options(mc.cores = parallel::detectCores()-2)
 # cluster stuffs
 task_id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 base_dir <- "/scratch/fuchs/fias/knguyen/"
-save_to  <- paste0(base_dir, "db_mt_fix_weight_smoother/")
+save_to  <- paste0(base_dir, "bias_on_scale/")
 
 dir.create(save_to, FALSE)
 
