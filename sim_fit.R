@@ -68,16 +68,19 @@ chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
 
 chosen_svy
 
+sk_scale <- function(median = 16, q = 0.5, shape = 10, skew = 1.5) {
+    # Skew log logistic median
+    clipr::write_clip(
+        Ryacas::as_r(Ryacas::yac_str("Solve(y==1/scale*(-1+0.5^(-1/skew))^(-1/shape),scale)"))
+    )
+      (0.5^((-1) / skew) - 1)^((-1) / shape) / median
+  }
+
 # AFS parameters and sampling
 # Following skew log-logistic distribution, at the begining, year 1900
-ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
-qskewlogis(.5, ref$scale, ref$shape, ref$skew) # 17
-
-min_scale = 0.07
-qskewlogis(.5, min_scale, ref$shape, ref$skew)
-
-max_scale = 0.0555
-qskewlogis(.5, max_scale, ref$shape, ref$skew)
+ref = list(scale = sk_scale(17), shape = 10, skew  = 1.5)
+(min_scale = sk_scale(15))
+(max_scale = sk_scale(19))
 
 if (params$trend == "none") {
 	pdata = tibble(yob = birth_cohorts, scale = ref$scale, skew = ref$skew, shape = ref$shape)
