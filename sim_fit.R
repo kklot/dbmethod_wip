@@ -12,6 +12,7 @@ options(mc.cores = parallel::detectCores()-2)
 task_id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 base_dir <- "/scratch/fuchs/fias/knguyen/"
 save_to  <- paste0(base_dir, "db_mt_fix_weight_smoother/")
+
 dir.create(save_to, FALSE)
 
 scenarios <- crossing(
@@ -106,26 +107,51 @@ bias_f <- switch(params$bias,
 # Generate pooled and survey data
 ## Generate true afs
 afsd = my_pop %>%
+    # add reference parameters
     left_join(pdata, "yob") %>%
-    arrange(yob) %>%
-    group_by(yob) %>%
-    mutate(afs = rskewlogis(n(), scale, shape, skew)) %>%
-    select(id, yob, afs)
+    arrange(yob)
 
 afsd <- afsd %>%
+    # generate surveys sample
     uncount(params$nsv, .id = "svy") %>%
     mutate(
         svy = chosen_svy[svy],
         age = svy - yob
     ) %>%
-    filter(age %in% 15:49) %>%
+    # who in the eligible ages
+    filter(age %in% 15:49) 
+
+# generate bias 
+afsd <- afsd %>%
     mutate(
-        bias = bias_f(age) + rnorm(n(), 0, 0.3),
-        biased_afs = afs + bias,
+        # generate biased in term of median age 
+        true_median = qskewlogis(.5, scale, shape, skew),
+        biased_median = true_median + bias_f(age) + rnorm(n(), 0, 1),
+        # and convert back to biased in scale
+        biased_scale = sk_scale(biased_median),
+        biased_afs = rskewlogis(n(), biased_scale, shape, skew),
+        afs = rskewlogis(n(), scale, shape, skew),
         sampling_weight = age_weight(age),
+        # survival data format
         event = if_else(biased_afs <= age, 1, 0),
-        biased_afs = if_else(event == 0, as.double(age), biased_afs)
+        # for censored obs
+        biased_afs = if_else(event == 0, as.double(age), biased_afs),
+        afs = if_else(event == 0, as.double(age), afs)
     )
+
+# bias form in median
+afsd %>%
+    mutate(diff = biased_median - true_median) %>%
+    group_by(svy, age) %>%
+    summarise(med=median(diff))  %>%
+    ggplot(aes(age, med)) + geom_line()
+
+# bias form in scale
+afsd %>%
+    mutate(diff = biased_scale - scale) %>%
+    group_by(svy, age) %>%
+    summarise(med=median(diff))  %>%
+    ggplot(aes(age, med, color=factor(svy))) + geom_line()
 
 # Fit model
 source("get_posterior.R")
