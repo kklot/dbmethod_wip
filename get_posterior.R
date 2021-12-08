@@ -72,50 +72,8 @@ get_posterior <- function(to_skew = 1,
         
         if (check) {
             browser()
-            # Check if the age distribution is ok
-            fitdt %>% ggplot(aes(age), alpha = .5) +
-                geom_histogram() +
-                facet_wrap(~svy)
-
-            sml <- obj$simulate(, 1)
-            sml$y2 <- sapply(1:length(sml$scale), \(x) rskewlogis(1, sml$scale[x], sml$shape, sml$skew))
-
-            scale_i <- smp[1, "intercept"] +
-                smp[1, attributes(smp)$yob_id] +
-                smp[1, attributes(smp)$age_id[20]]            
-            med_i <- qskewlogis(
-                .5, scale_i %>% exp(),
-                smp[1, "log_shape"] %>% exp(),
-                smp[1, "log_skew"] %>% exp()
-            )
-            est_i <- tibble(yob = attributes(smp)$yob, med = med_i)
-            est_i %>% filter(yob %in% range(wanted_cohort))            
-            fitdt %>% bind_cols(y=sml$y2) %>%
-                group_by(svy, yob) %>%
-                summarise(afs = median(afs), y = median(y)) %>%
-                ggplot() +
-                geom_rect(aes(xmin = 1970, xmax = 2005, ymin = -Inf, ymax = Inf), fill = "#f0e5d9", alpha = .1) +
-                geom_smooth(aes(yob, afs, color = factor(svy)), lwd = .7, se = F) +
-                geom_line(aes(yob, y, color = factor(svy)), lty="dashed", lwd = .7) +
-                geom_line(aes(yob, median, color="True"), lwd = 2, alpha=.7, pdata %>% filter(yob %in% wanted_cohort)) +
-                geom_line(aes(yob, med, color="Fitted AR2"), est_i) +
-                scale_color_manual(values = gen_colors(n = 9)) +
-                labs(title = "AR(2)") -> g            
-            ggsave("AR2xxx.pdf", g, width = 7, height = 7)            
-            open_file("AR2xxx.pdf")
-
-            tibble(yhat = sml$y2, y = sml$afs, event = sml$event) %>%
-                ggplot() +
-                geom_point(aes(y, yhat)) +
-                facet_wrap(~event)
-
-            put(2, 2)
-            plotp(sml$yob_rw2)
-            plotp(smp[1, attributes(smp)$yob_id])
-            plotp(sml$age_rw2)
-            plotp(smp[1, attributes(smp)$age_id])
         }
-
+        
         smp
     } # end a sample
 
