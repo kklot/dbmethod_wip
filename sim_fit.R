@@ -11,7 +11,8 @@ options(mc.cores = parallel::detectCores()-2)
 # cluster stuffs
 task_id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 base_dir <- "/scratch/fuchs/fias/knguyen/"
-save_to  <- paste0(base_dir, "db_mt_fix_weight_smoother/")
+save_to  <- paste0(base_dir, "bias_on_scale/")
+
 dir.create(save_to, FALSE)
 
 scenarios <- crossing(
@@ -68,24 +69,19 @@ chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
 
 chosen_svy
 
-# Load dll
-# we do multiple fit on parallel so avoiding using it in TMB
-openmp(1)
-compile("model.cpp")
-dyn.load(dynlib("model"))
-invisible(config(tape.parallel=FALSE, DLL='model'))
-source("tmb_sampling.R")
+sk_scale <- function(median = 16, q = 0.5, shape = 10, skew = 1.5) {
+    # Skew log logistic median
+    # clipr::write_clip(
+        # Ryacas::as_r(Ryacas::yac_str("Solve(y==1/scale*(-1+0.5^(-1/skew))^(-1/shape),scale)"))
+    # )
+    (0.5^((-1) / skew) - 1)^((-1) / shape) / median
+  }
 
 # AFS parameters and sampling
 # Following skew log-logistic distribution, at the begining, year 1900
-ref = list(scale = 0.06204, shape = 10, skew  = 1.5)
-qskewlogis(.5, ref$scale, ref$shape, ref$skew) # 17
-
-min_scale = 0.07
-qskewlogis(.5, min_scale, ref$shape, ref$skew)
-
-max_scale = 0.0555
-qskewlogis(.5, max_scale, ref$shape, ref$skew)
+ref = list(scale = sk_scale(17), shape = 10, skew  = 1.5)
+(min_scale = sk_scale(15))
+(max_scale = sk_scale(19))
 
 if (params$trend == "none") {
 	pdata = tibble(yob = birth_cohorts, scale = ref$scale, skew = ref$skew, shape = ref$shape)
@@ -111,34 +107,70 @@ bias_f <- switch(params$bias,
 # Generate pooled and survey data
 ## Generate true afs
 afsd = my_pop %>%
+    # add reference parameters
     left_join(pdata, "yob") %>%
-    arrange(yob) %>%
-    group_by(yob) %>%
-    mutate(afs = rskewlogis(n(), scale, shape, skew)) %>%
-    select(id, yob, afs)
+    arrange(yob)
 
 afsd <- afsd %>%
+    # generate surveys sample
     uncount(params$nsv, .id = "svy") %>%
     mutate(
         svy = chosen_svy[svy],
         age = svy - yob
     ) %>%
-    filter(age %in% 15:49) %>%
-        mutate(
-            bias = bias_f(age) + rnorm(n(), 0, 0.3),
-            biased_afs = afs + bias,
-            sampling_weight = age_weight(age),
-            event = if_else(biased_afs <= age, 1, 0)
-        )
+    # who in the eligible ages
+    filter(age %in% 15:49) 
+
+# generate bias 
+afsd <- afsd %>%
+    mutate(
+        # generate biased in term of median age 
+        true_median = qskewlogis(.5, scale, shape, skew),
+        biased_median = true_median + bias_f(age) + rnorm(n(), 0, 1),
+        # and convert back to biased in scale
+        biased_scale = sk_scale(biased_median),
+        biased_afs = rskewlogis(n(), biased_scale, shape, skew),
+        afs = rskewlogis(n(), scale, shape, skew),
+        sampling_weight = age_weight(age),
+        # survival data format
+        event = if_else(biased_afs <= age, 1, 0),
+        # for censored obs
+        biased_afs = if_else(event == 0, as.double(age), biased_afs),
+        afs = if_else(event == 0, as.double(age), afs)
+    )
+
+# bias form in median
+afsd %>%
+    mutate(diff = biased_median - true_median) %>%
+    group_by(svy, age) %>%
+    summarise(med=median(diff))  %>%
+    ggplot(aes(age, med)) + geom_line()
+
+# bias form in scale
+afsd %>%
+    mutate(diff = biased_scale - scale) %>%
+    group_by(svy, age) %>%
+    summarise(med=median(diff))  %>%
+    ggplot(aes(age, med, color=factor(svy))) + geom_line()
 
 # Fit model
 source("get_posterior.R")
  
+# Load dll
+# we do multiple fit on parallel so avoiding using it in TMB
+openmp(1)
+options(mc.cores=1)
+compile("model.cpp")
+dyn.load(dynlib("model"))
+invisible(config(tape.parallel = FALSE, DLL = "model"))
+source("tmb_sampling.R")
+
 # parallel within this
 post = get_posterior(
-    data = afsd, sample_size = params$sample_size, K = params$theK, S = 50,
-    check = T, 
-    yob_order = 2
+    data = afsd, 
+    sample_size = params$sample_size, 
+    K = params$theK, 
+    S = 50
 )
 
 attributes(post)$ref_par = ref 
