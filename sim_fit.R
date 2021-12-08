@@ -16,7 +16,7 @@ save_to  <- paste0(base_dir, "bias_on_scale/")
 dir.create(save_to, FALSE)
 
 scenarios <- crossing(
-    nsv = 2:7,
+    nsv = 2:5,
     sample_size = 1000,
     bias = char(none, logis),
     trend = char(increase, decrease, none),
@@ -57,12 +57,12 @@ sz %>% {approxfun(.[,1], .[,2]/sum(.[,2]), yleft=0, yright=0)} -> age_weight
 my_pop <- data.table(id  = 1:N, yob = sample(birth_cohorts, N, T), afs=0)
 
 # choose survey year 5 year apart starting backward from 2020
-# maximum 7
+# maximum 5
 chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
     mutate(age = svy - bch) %>%
     filter(age >= 15) %>%
     group_by(svy) %>%
-    summarise(min = min(age), max = max(age)) %>%
+    summarise(min = min(age), max = max(age), miny = min(bch), maxy = max(bch)) %>%
     arrange(desc(svy)) %>%
     mutate(id = 1:nrow(.) %% 5) %>%
     filter(svy == 2020 | id == 0) %>%
