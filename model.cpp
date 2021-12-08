@@ -59,18 +59,16 @@ Type objective_function<Type>::operator() ()
   prior += ktools::rw(age_rw2, R_age, age_rw2_e, age_order);
 
   // Data likelihood
-	vector<Type> logliki(afs.size());
-
   for (int i = 0; i < afs.size(); i++) 
   {
     Type eta = intercept + yob_rw2(yob(i)) + age_rw2(age(i));
     Type scale = exp(eta);
     if (event(i)) 
 		{
-      logliki(i) = log( svw(i) * ktools::ft_llogisI(afs(i), shape, scale, skew) );
+      dll -= log(ktools::ft_llogisI(afs(i), shape, scale, skew) );
     } 
 		else {
-      logliki(i) = log(svw(i) * ktools::St_llogisI(afs(i), shape, scale, skew));
+      dll -= log(ktools::St_llogisI(afs(i), shape, scale, skew));
     }
   }
   dll += prior;

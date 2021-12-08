@@ -28,9 +28,8 @@ get_posterior <- function(to_skew = 1,
         idata <- list(
             afs = fitdt$biased_afs,
             age = fitdt$age - min(fitdt$age),
-            event = fitdt$event,
             yob = fitdt$yob - min(fitdt$yob),
-            svw = fitdt$sv_weight,
+            event = fitdt$event,
             sd_beta = c(0, 1),
             sd_yob = c(1, 1e-1), # pc-prior
             sd_age = c(1, 1e-1), # pc-prior
@@ -53,9 +52,6 @@ get_posterior <- function(to_skew = 1,
             log_age_rw2_e = log(.1)
         )
 
-        # change this depending on model, fixed parameters that are not estimated
-        which_ones <- NULL
-
         # model configs
         openmp(1)
         options(tape.parallel = FALSE, DLL = "model")
@@ -69,7 +65,7 @@ get_posterior <- function(to_skew = 1,
         fit <- nlminb(obj$par, obj$fn, obj$gr)
   
         # sample posterior samples
-        smp <- sample_tmb(list(obj = obj, fit = fit), S, fe_only, re_only)
+        smp <- sample_tmb(list(obj = obj, fit = fit), S, FALSE, FALSE)
 
         attributes(smp)$yob <- sort(unique(fitdt$yob))
         attributes(smp)$age <- sort(unique(fitdt$age))
@@ -91,14 +87,18 @@ get_posterior <- function(to_skew = 1,
                 smp[1, "log_shape"] %>% exp(),
                 smp[1, "log_skew"] %>% exp()
             )
+            
             est_i <- tibble(yob=attributes(smp)$yob, med=med_i)            
+            
             fitdt %>%
+                group_by(svy, yob) %>%
+                mutate(afs = median(afs)) %>%
                 ggplot() +
-                # geom_point(aes(yob, afs, color = factor(svy), alpha = factor(sv_weight)), se = F) +
-                geom_smooth(aes(yob, afs, color = factor(svy)), se = F) +
-                geom_line(aes(yob, median), lwd = 2, pdata) +
-                geom_line(aes(yob, med), est_i, col = "red") +
-                geom_vline(xintercept = c(1970, 2005))
+                geom_point(aes(yob, afs, color = factor(svy)), lty = "dashed") +
+                geom_line(aes(yob, median, color = "Reference"), lwd = 2, pdata) +
+                geom_line(aes(yob, med, color = "Fitted"), lwd = 1.5, est_i) +
+                geom_vline(xintercept = c(1985, 2005))
+            
         }
 
         smp

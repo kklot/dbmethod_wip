@@ -22,9 +22,11 @@ scenarios <- crossing(
     trend = char(increase, decrease, none),
     theK = 100
 )
+
 scenarios
 
 params <- as.list(scenarios[task_id, ])
+params
 
 myname <- unlist(params) %>%
     paste0(names(.), .) %>%
@@ -66,7 +68,6 @@ chosen_svy <- crossing(svy = 1990:2020, bch = wanted_cohort) %>%
     filter(svy == 2020 | id == 0) %>%
     slice_head(n = params$nsv) %>%
     pull(svy)
-
 chosen_svy
 
 sk_scale <- function(median = 16, q = 0.5, shape = 10, skew = 1.5) {
@@ -155,11 +156,11 @@ afsd %>%
 
 # Fit model
 source("get_posterior.R")
- 
+
 # Load dll
 # we do multiple fit on parallel so avoiding using it in TMB
 openmp(1)
-options(mc.cores=1)
+options(mc.cores = 1)
 compile("model.cpp")
 dyn.load(dynlib("model"))
 invisible(config(tape.parallel = FALSE, DLL = "model"))
