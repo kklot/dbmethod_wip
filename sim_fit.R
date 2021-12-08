@@ -71,10 +71,10 @@ chosen_svy
 
 sk_scale <- function(median = 16, q = 0.5, shape = 10, skew = 1.5) {
     # Skew log logistic median
-    clipr::write_clip(
-        Ryacas::as_r(Ryacas::yac_str("Solve(y==1/scale*(-1+0.5^(-1/skew))^(-1/shape),scale)"))
-    )
-      (0.5^((-1) / skew) - 1)^((-1) / shape) / median
+    # clipr::write_clip(
+        # Ryacas::as_r(Ryacas::yac_str("Solve(y==1/scale*(-1+0.5^(-1/skew))^(-1/shape),scale)"))
+    # )
+    (0.5^((-1) / skew) - 1)^((-1) / shape) / median
   }
 
 # AFS parameters and sampling
