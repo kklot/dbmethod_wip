@@ -37,7 +37,7 @@ mypath <- paste0(save_to, myname)
 ## Pool population
 N <- 10^6
 birth_cohorts <- 1940:2005
-wanted_cohort <- 1970:2005
+wanted_cohort <- 1985:2005
 elig_age      <- 15:49 # age eligible for including in the year of surveys
 
 # take age distribution of SZ

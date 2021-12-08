@@ -39,7 +39,7 @@ params
 
 ## Pool population
 birth_cohorts <- 1940:2005
-wanted_cohort <- 1970:2005
+wanted_cohort <- 1985:2005
 
 sk_scale <- function(median = 16, q = 0.5, shape = 10, skew = 1.5) {
     (0.5^((-1) / skew) - 1)^((-1) / shape) / median
